@@ -163,20 +163,11 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
 }
 
 tls_connection_t* tls_connect(const char *host, int port) {
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        LOG_ERROR("WSAStartup failed");
-        return NULL;
-    }
-
     tls_connection_t *conn = calloc(1, sizeof(tls_connection_t));
-    if (!conn) { WSACleanup(); return NULL; }
+    if (!conn) return NULL;
 
     conn->pSSPI = InitSecurityInterfaceA();
-    if (!conn->pSSPI) { 
-        LOG_ERROR("InitSecurityInterfaceA failed"); 
-        free(conn); WSACleanup(); return NULL; 
-    }
+    if (!conn->pSSPI) { LOG_ERROR("InitSecurityInterfaceA failed"); free(conn); return NULL; }
 
     char port_str[16];
     sprintf(port_str, "%d", port);
@@ -188,18 +179,13 @@ tls_connection_t* tls_connect(const char *host, int port) {
 
     if (getaddrinfo(host, port_str, &hints, &result) != 0) { 
         LOG_ERROR("getaddrinfo failed for %s", host);
-        free(conn); WSACleanup(); return NULL; 
+        free(conn); return NULL; 
     }
-    
     conn->socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (conn->socket == INVALID_SOCKET) { 
-        LOG_ERROR("socket creation failed"); 
-        freeaddrinfo(result); free(conn); WSACleanup(); return NULL; 
-    }
-    
+    if (conn->socket == INVALID_SOCKET) { LOG_ERROR("socket creation failed"); freeaddrinfo(result); free(conn); return NULL; }
     if (connect(conn->socket, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR) { 
         LOG_ERROR("connect failed to %s:%d", host, port);
-        closesocket(conn->socket); freeaddrinfo(result); free(conn); WSACleanup(); return NULL; 
+        closesocket(conn->socket); freeaddrinfo(result); free(conn); return NULL; 
     }
     freeaddrinfo(result);
 
@@ -214,13 +200,13 @@ tls_connection_t* tls_connect(const char *host, int port) {
     SECURITY_STATUS status = conn->pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &conn->hCreds, NULL);
     if (status != SEC_E_OK) {
         log_sspi_error("AcquireCredentialsHandle", status);
-        closesocket(conn->socket); free(conn); WSACleanup(); return NULL;
+        closesocket(conn->socket); free(conn); return NULL;
     }
 
     SECURITY_STATUS sc = PerformHandshake(conn->socket, conn->pSSPI, &conn->hCreds, host, &conn->hContext, &conn->extra_data, &conn->extra_data_len);
     if (sc != SEC_E_OK) {
         conn->pSSPI->FreeCredentialsHandle(&conn->hCreds);
-        closesocket(conn->socket); free(conn); WSACleanup(); return NULL;
+        closesocket(conn->socket); free(conn); return NULL;
     }
 
     return conn;
@@ -336,5 +322,4 @@ void tls_close(tls_connection_t *conn) {
     closesocket(conn->socket);
     if (conn->extra_data) free(conn->extra_data);
     free(conn);
-    WSACleanup();
 }
