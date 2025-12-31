@@ -47,21 +47,25 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
     if (box->node->style->width > 0) {
         content_width = box->node->style->width;
     } else {
-        // Auto width for blocks: fill available parent content width minus our own spacers
-        content_width = width - (margin_left + margin_right + padding_left + padding_right + (border * 2));
+        // Auto width
+        if (box->node->style->display == DISPLAY_INLINE && box->node->type == DOM_NODE_ELEMENT) {
+             // Inline containers (span, b, i, a) start with 0 width and grow with children
+             // But they are constrained by parent width for wrapping purposes
+             content_width = 0; // Will be recalculated after children
+        } else {
+             // Block elements fill available width
+             content_width = width - (margin_left + margin_right + padding_left + padding_right + (border * 2));
+        }
     }
     if (content_width < 0) content_width = 0;
 
-    // Handle Inline specific width (shrink to fit text/content) - Simplified
-    if (box->node->style->display == DISPLAY_INLINE || box->node->type == DOM_NODE_TEXT) {
-         if (box->node->type == DOM_NODE_TEXT && box->node->content) {
-             content_width = strlen(box->node->content) * 8; // Approx char width
-         } else if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-             content_width = 100; // Placeholder image width
-             if (box->node->image_size > 0) {
-                 // If we had image metadata (width/height) loaded, we'd use it here.
-                 // For now, assume 100 if loaded.
-             }
+    // Handle Leaf Inline specific width (Text, Img)
+    if (box->node->type == DOM_NODE_TEXT && box->node->content) {
+         content_width = strlen(box->node->content) * 8; 
+    } else if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
+         content_width = 100;
+         if (box->node->image_size > 0) {
+             // Use metadata if available
          }
     }
 
@@ -114,18 +118,30 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
         }
         // Inline Layout
         else if (child->node->style->display == DISPLAY_INLINE || child->node->type == DOM_NODE_TEXT) {
-            layout_calculate_positions(child, current_child_x, current_child_y, content_width - (current_child_x - child_start_x));
+            // If we are an inline container, our content_width is 0 initially.
+            // We pass the PARENT'S available width (width arg) minus our current offset as the constraint.
+            // Actually, we should pass the remaining space on the current line.
             
-            // Check for wrap
-            if (current_child_x + child->dimensions.width > child_start_x + content_width) {
+            int remaining_w = (box->node->style->display == DISPLAY_INLINE && box->node->type == DOM_NODE_ELEMENT) ? 
+                              (width - (current_child_x - x)) : // Use parent context width
+                              (content_width - (current_child_x - child_start_x)); // Use own content width (blocks)
+
+            layout_calculate_positions(child, current_child_x, current_child_y, remaining_w);
+            
+            // Check for wrap (Logic depends on whether child exceeded the line)
+            // If child width > remaining, and it's not the first item, wrap.
+            int available_w = (box->node->style->display == DISPLAY_INLINE && box->node->type == DOM_NODE_ELEMENT) ? width : content_width;
+            int limit_x = (box->node->style->display == DISPLAY_INLINE && box->node->type == DOM_NODE_ELEMENT) ? x + width : child_start_x + content_width;
+
+            if (current_child_x + child->dimensions.width > limit_x && current_child_x > child_start_x) {
                  current_child_x = child_start_x;
                  current_child_y += line_height;
                  line_height = 0;
-                 // Recalculate pos at new line
-                 layout_calculate_positions(child, current_child_x, current_child_y, content_width);
+                 // Recalculate pos at new line with full width available
+                 layout_calculate_positions(child, current_child_x, current_child_y, available_w);
             }
 
-            child->dimensions.x = current_child_x; // Ensure strict placement
+            child->dimensions.x = current_child_x; 
             child->dimensions.y = current_child_y;
 
             current_child_x += child->dimensions.width;
@@ -150,6 +166,15 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
     // Flush last line
     if (line_height > 0) {
         current_child_y += line_height;
+    }
+
+    // Update width for inline containers based on content usage (if it was 0)
+    if (box->node->style->display == DISPLAY_INLINE && box->node->type == DOM_NODE_ELEMENT && content_width == 0) {
+        // Simple approximation: widest point reached - start_x
+        // Note: For multi-line inlines this is bounding box width
+        if (current_child_x > child_start_x) {
+             content_width = current_child_x - child_start_x;
+        }
     }
     
     // For table row, set height to max cell height
