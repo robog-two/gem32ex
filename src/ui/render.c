@@ -97,13 +97,18 @@ static int get_png_dimensions(const void *data, size_t size, int *out_width, int
     if (!is_png(data, size)) return 0;
 
     const unsigned char *bytes = (const unsigned char *)data;
-    // IHDR chunk width is at offset 16-20 (big-endian)
-    // IHDR chunk height is at offset 20-24 (big-endian)
+    // PNG structure:
+    // Offset 0-7: PNG signature
+    // Offset 8-11: IHDR chunk length (always 13)
+    // Offset 12-15: IHDR chunk type
+    // Offset 16-19: Width (big-endian uint32)
+    // Offset 20-23: Height (big-endian uint32)
     unsigned int width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
     unsigned int height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
 
-    // Sanity check - PNG dimensions should be reasonable
-    if (width == 0 || width > 65535 || height == 0 || height > 65535) return 0;
+    // Sanity check - PNG dimensions should be non-zero and reasonable
+    // PNG can be up to 2^31-1 in each dimension theoretically, but we limit to reasonable values
+    if (width == 0 || width > 16384 || height == 0 || height > 16384) return 0;
 
     *out_width = (int)width;
     *out_height = (int)height;
