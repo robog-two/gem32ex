@@ -268,12 +268,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        // Use intrinsic image width if available, otherwise default to 100px
-        if (box->node->image_width > 0) {
-            box->fragment.border_box.width = box->node->image_width + (bw * 2) + pl + pr;
-        } else {
-            box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
-        }
+        box->fragment.border_box.width = 100;
     } else {
         if (style->display == DISPLAY_INLINE) {
              box->fragment.border_box.width = space.available_width - ml - mr;
@@ -390,13 +385,6 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
 
     if (style->height > 0) {
         box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
-    } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        // For images, use intrinsic height if available
-        if (box->node->image_height > 0) {
-            box->fragment.border_box.height = box->node->image_height + (bw * 2) + pt + pb;
-        } else {
-            box->fragment.border_box.height = 100 + (bw * 2) + pt + pb;  // Default fallback
-        }
     } else {
         box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
     }
