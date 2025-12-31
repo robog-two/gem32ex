@@ -1,5 +1,5 @@
 #include "form.h"
-#include "network/http.h"
+#include "network/protocol.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -16,7 +16,7 @@ static node_t* find_enclosing_form(node_t *node) {
     return NULL;
 }
 
-// Simple URL encoder (A-Z, a-z, 0-9, -, ., _, ~ are safe)
+// Simple URL encoder (A-Z, a-z, 0-9, -, ., _, ~ are safe, space is +)
 static char* url_encode(const char *str) {
     if (!str) return strdup("");
     size_t len = strlen(str);
@@ -90,16 +90,14 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url, char 
     const char *method = node_get_attr(form, "method");
     if (!method) method = "GET";
 
-    // Resolve URL (Simple logic)
+    // Resolve URL
     char target_url[2048];
     if (action && strlen(action) > 0) {
         if (strstr(action, "://")) {
             strncpy(target_url, action, sizeof(target_url));
         } else {
-            // Relative
             strncpy(target_url, base_url, sizeof(target_url));
             if (action[0] == '/') {
-                // To root - find first slash after ://
                 char *p = strstr(target_url, "://");
                 if (p) {
                     p = strchr(p + 3, '/');
@@ -107,15 +105,17 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url, char 
                 }
                 strncat(target_url, action, sizeof(target_url) - strlen(target_url) - 1);
             } else {
-                // Relative to current dir - strip filename
                 char *p = strrchr(target_url, '/');
                 if (p) {
-                    // Don't strip if it's the // in http://
-                    if (*(p-1) != ':') {
-                        *(p+1) = '\0';
-                    } else {
+                    // Check if it's the second slash in ://
+                    if (p > target_url && *(p-1) == '/') {
+                        // It's the slash in http://host, just append
                         strcat(target_url, "/");
+                    } else {
+                        *(p+1) = '\0';
                     }
+                } else {
+                    strcat(target_url, "/");
                 }
                 strncat(target_url, action, sizeof(target_url) - strlen(target_url) - 1);
             }
@@ -132,17 +132,17 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url, char 
     network_response_t *res = NULL;
     if (strcasecmp(method, "POST") == 0) {
         if (out_url) strncpy(out_url, target_url, out_url_size);
-        res = http_post(target_url, body, "application/x-www-form-urlencoded");
+        res = network_post(target_url, body, "application/x-www-form-urlencoded");
     } else {
-        // GET - append query string
         char full_url[4096];
         if (strlen(body) > 0) {
-            snprintf(full_url, sizeof(full_url), "%s?%s", target_url, body);
+            char sep = strchr(target_url, '?') ? '&' : '?';
+            snprintf(full_url, sizeof(full_url), "%s%c%s", target_url, sep, body);
         } else {
             strncpy(full_url, target_url, sizeof(full_url));
         }
         if (out_url) strncpy(out_url, full_url, out_url_size);
-        res = http_fetch(full_url);
+        res = network_fetch(full_url);
     }
 
     free(body);

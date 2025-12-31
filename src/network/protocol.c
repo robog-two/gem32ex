@@ -71,12 +71,23 @@ network_response_t* network_fetch(const char *url) {
 }
 
 network_response_t* network_post(const char *url, const char *body, const char *content_type) {
-    // POST usually doesn't redirect automatically to a different protocol in the same way,
-    // but we can at least dispatch it.
     if (strncmp(url, "gemini://", 9) == 0) {
         return NULL; // Gemini doesn't have POST
     }
     network_response_t *res = http_post(url, body, content_type);
-    if (res) res->final_url = strdup(url);
+    if (res) {
+        // Handle post-redirect (PRG pattern)
+        if (res->status_code >= 301 && res->status_code <= 308) {
+            char *new_url = res->data; // http_post puts Location in data for redirects
+            if (new_url && strlen(new_url) > 0) {
+                char redirect_target[2048];
+                strncpy(redirect_target, new_url, sizeof(redirect_target)-1);
+                redirect_target[sizeof(redirect_target)-1] = '\0';
+                network_response_free(res);
+                return network_fetch(redirect_target);
+            }
+        }
+        if (!res->final_url) res->final_url = strdup(url);
+    }
     return res;
 }
