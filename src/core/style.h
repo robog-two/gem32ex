@@ -18,6 +18,23 @@ typedef enum {
     TEXT_ALIGN_RIGHT
 } text_align_t;
 
+typedef enum {
+    FONT_STYLE_NORMAL,
+    FONT_STYLE_ITALIC
+} font_style_t;
+
+typedef enum {
+    TEXT_DECORATION_NONE,
+    TEXT_DECORATION_UNDERLINE,
+    TEXT_DECORATION_LINE_THROUGH
+} text_decoration_t;
+
+typedef enum {
+    FONT_FAMILY_SERIF,
+    FONT_FAMILY_SANS_SERIF,
+    FONT_FAMILY_MONOSPACE
+} font_family_t;
+
 typedef struct {
     uint32_t color;
     uint32_t bg_color;
@@ -29,6 +46,9 @@ typedef struct {
     // Font properties
     int font_size;   // In pixels (approx)
     int font_weight; // 400 = normal, 700 = bold
+    font_style_t font_style;
+    font_family_t font_family;
+    text_decoration_t text_decoration;
     
     display_t display;
     text_align_t text_align;

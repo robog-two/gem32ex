@@ -6,15 +6,31 @@
 static HFONT get_font(style_t *style) {
     int height = -12; // Default
     int weight = FW_NORMAL;
+    DWORD italic = FALSE;
+    DWORD underline = FALSE;
+    DWORD strikeout = FALSE;
+    const char *face = "Arial";
+    DWORD pitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
 
     if (style) {
         if (style->font_size > 0) height = -style->font_size;
         if (style->font_weight >= 700) weight = FW_BOLD;
+        if (style->font_style == FONT_STYLE_ITALIC) italic = TRUE;
+        if (style->text_decoration == TEXT_DECORATION_UNDERLINE) underline = TRUE;
+        if (style->text_decoration == TEXT_DECORATION_LINE_THROUGH) strikeout = TRUE;
+        
+        if (style->font_family == FONT_FAMILY_MONOSPACE) {
+            face = "Courier New";
+            pitchAndFamily = FIXED_PITCH | FF_MODERN;
+        } else if (style->font_family == FONT_FAMILY_SERIF) {
+            face = "Times New Roman";
+            pitchAndFamily = VARIABLE_PITCH | FF_ROMAN;
+        }
     }
 
-    HFONT hFont = CreateFont(height, 0, 0, 0, weight, FALSE, FALSE, FALSE, 
+    HFONT hFont = CreateFont(height, 0, 0, 0, weight, italic, underline, strikeout, 
                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, 
-                      DEFAULT_QUALITY, FF_DONTCARE, "Arial");
+                      DEFAULT_QUALITY, pitchAndFamily, face);
     
     if (!hFont) {
         hFont = GetStockObject(DEFAULT_GUI_FONT);
