@@ -28,7 +28,7 @@ static void HandleClick(HWND hwnd, int x, int y);
 static history_tree_t *g_history = NULL;
 static layout_box_t *g_current_layout = NULL;
 static node_t *g_current_dom = NULL;
-static node_t *g_focused_node = NULL;
+node_t *g_focused_node = NULL;
 static char g_current_url[2048] = {0};
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
