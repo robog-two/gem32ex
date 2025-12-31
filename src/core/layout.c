@@ -276,12 +276,13 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        // Images get default 100px content width, plus padding and border
-        box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
+        // Images use intrinsic width if available, otherwise default to 100px
+        int img_width = (box->node->image_width > 0) ? box->node->image_width : 100;
+        box->fragment.border_box.width = img_width + (bw * 2) + pl + pr;
         static int matched_img = 0;
-        LOG_DEBUG("Layout: MATCHED IMG #%d! Set img width to 100 (content) + bw=%d*2 + pl=%d + pr=%d = %d total", ++matched_img, bw, pl, pr, box->fragment.border_box.width);
+        LOG_DEBUG("Layout: MATCHED IMG #%d! Set img width to %d (content) + bw=%d*2 + pl=%d + pr=%d = %d total", ++matched_img, img_width, bw, pl, pr, box->fragment.border_box.width);
         LOG_DEBUG("Layout: Image at y=%d, border_box now: x=%d y=%d w=%d h=%d", box->fragment.border_box.y, box->fragment.border_box.x, box->fragment.border_box.y, box->fragment.border_box.width, box->fragment.border_box.height);
-        LOG_DEBUG("Layout: Image display=%d style->width=%d", style->display, style->width);
+        LOG_DEBUG("Layout: Image display=%d style->width=%d intrinsic_w=%d intrinsic_h=%d", style->display, style->width, box->node->image_width, box->node->image_height);
     } else {
         // Not a style.width, not BLOCK/TABLE, and not an img tag
         if (box->node->tag_name) {

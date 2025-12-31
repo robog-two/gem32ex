@@ -110,7 +110,66 @@ static int get_png_dimensions(const void *data, size_t size, int *out_width, int
     return 1;
 }
 
-// Public function for extracting image dimensions (supports PNG, others)
+// Detect JPEG signature (FF D8)
+static int is_jpeg(const void *data, size_t size) {
+    if (!data || size < 2) return 0;
+    const unsigned char *bytes = (const unsigned char *)data;
+    return bytes[0] == 0xFF && bytes[1] == 0xD8;
+}
+
+// Extract JPEG dimensions from SOF (Start of Frame) marker
+// JPEG markers: FF D8 (SOI), FF xx (other markers), FF C0/C1/C2/C9/CA/CB (SOF)
+// SOF format: FF C0/C1/C2/C9/CA/CB, length (2 bytes), precision (1), height (2), width (2)
+static int get_jpeg_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
+    if (!data || size < 20 || !out_width || !out_height) return 0;
+    if (!is_jpeg(data, size)) return 0;
+
+    const unsigned char *bytes = (const unsigned char *)data;
+    size_t pos = 2;  // Skip SOI marker (FF D8)
+
+    while (pos + 8 < size) {
+        // Look for marker
+        if (bytes[pos] != 0xFF) {
+            pos++;
+            continue;
+        }
+
+        unsigned char marker = bytes[pos + 1];
+
+        // SOF markers: C0, C1, C2, C9, CA, CB (we care about dimensions)
+        if (marker == 0xC0 || marker == 0xC1 || marker == 0xC2 ||
+            marker == 0xC9 || marker == 0xCA || marker == 0xCB) {
+            // Length is at pos+2, height at pos+5, width at pos+7
+            if (pos + 9 < size) {
+                unsigned int height = (bytes[pos + 5] << 8) | bytes[pos + 6];
+                unsigned int width = (bytes[pos + 7] << 8) | bytes[pos + 8];
+
+                if (width > 0 && width <= 65535 && height > 0 && height <= 65535) {
+                    *out_width = (int)width;
+                    *out_height = (int)height;
+                    return 1;
+                }
+            }
+            return 0;  // Found SOF but couldn't read valid dimensions
+        }
+
+        // Skip this marker: marker is 2 bytes, then 2-byte length (big-endian)
+        if (pos + 3 < size) {
+            unsigned int marker_len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+            // Sanity check: length should include itself (2 bytes)
+            if (marker_len < 2) {
+                return 0;  // Invalid marker length
+            }
+            pos += marker_len + 2;
+        } else {
+            return 0;
+        }
+    }
+
+    return 0;  // No SOF marker found
+}
+
+// Public function for extracting image dimensions (supports PNG, JPEG, others)
 void render_extract_image_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
     // Initialize output to safe defaults
     if (out_width) *out_width = 0;
@@ -125,7 +184,12 @@ void render_extract_image_dimensions(const void *data, size_t size, int *out_wid
         return;
     }
 
-    // For other formats (JPG, BMP, GIF, etc.), we'd need format-specific parsers
+    // Try JPEG second
+    if (get_jpeg_dimensions(data, size, out_width, out_height)) {
+        return;
+    }
+
+    // For other formats (BMP, GIF, etc.), we'd need format-specific parsers
     // For now, default to reasonable dimensions if format unknown
     *out_width = 100;
     *out_height = 100;
