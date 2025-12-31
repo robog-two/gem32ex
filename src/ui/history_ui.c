@@ -55,25 +55,30 @@ void history_ui_fetch_favicon(history_node_t *node) {
     }
 }
 
-// Calculate the width needed for a node and its siblings
+// Calculate the width needed for a node and all its descendants
 static int calculate_node_width(history_node_t *node) {
     if (!node) return 24;
 
-    int width = 24;  // Space for this node
+    int iconSize = 16;
+    int spacing = 24;  // Horizontal spacing between siblings
 
-    if (node->children_count > 1) {
-        // Multiple children - they'll be laid out side by side
-        int children_width = 0;
-        for (int i = 0; i < node->children_count; i++) {
-            children_width += calculate_node_width(node->children[i]);
-        }
-        width = (children_width > width) ? children_width : width;
+    if (node->children_count == 0) {
+        // Leaf node
+        return iconSize;
     } else if (node->children_count == 1) {
-        // Single child - goes straight down
-        width = calculate_node_width(node->children[0]);
+        // Single child - width is same as child's width
+        return calculate_node_width(node->children[0]);
+    } else {
+        // Multiple children - sum their widths plus spacing
+        int total_width = 0;
+        for (int i = 0; i < node->children_count; i++) {
+            total_width += calculate_node_width(node->children[i]);
+            if (i < node->children_count - 1) {
+                total_width += spacing;  // Space between siblings
+            }
+        }
+        return total_width;
     }
-
-    return width;
 }
 
 // Position nodes in a grid layout
@@ -99,12 +104,27 @@ static int layout_node_positions(history_node_t *node, node_pos_t *positions, in
 
     if (node->children_count > 1) {
         // Multiple children laid out horizontally below
+        // First, calculate the total width needed
+        int total_width = 0;
         for (int i = 0; i < node->children_count; i++) {
+            total_width += calculate_node_width(node->children[i]);
+            if (i < node->children_count - 1) {
+                total_width += spacing;
+            }
+        }
+
+        // Center this subtree under the parent
+        int child_start_x = start_x - (total_width / 2);
+
+        // Layout each child
+        for (int i = 0; i < node->children_count; i++) {
+            int child_width = calculate_node_width(node->children[i]);
             current_x = layout_node_positions(node->children[i], positions, node_count,
-                                             current_x, start_y - spacing, pos_index);
+                                             child_start_x, start_y - spacing, pos_index);
+            child_start_x = current_x + spacing;
         }
     } else if (node->children_count == 1) {
-        // Single child goes straight down
+        // Single child goes straight down, same x position
         current_x = layout_node_positions(node->children[0], positions, node_count,
                                          start_x, start_y - spacing, pos_index);
     }
