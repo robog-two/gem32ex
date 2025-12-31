@@ -29,6 +29,7 @@ typedef struct layout_box_s {
     // Cached constraints (for future invalidation logic)
     constraint_space_t last_space;
 
+    struct layout_box_s *parent;
     struct layout_box_s *first_child;
     struct layout_box_s *next_sibling;
 } layout_box_t;

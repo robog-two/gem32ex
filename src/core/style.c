@@ -36,6 +36,56 @@ static uint32_t parse_color(const char *val) {
     return 0;
 }
 
+static void parse_css_property(style_t *style, char *name, char *val) {
+    // Simple trim
+    while (*name == ' ' || *name == '\t' || *name == '\n') name++;
+    char *end = name + strlen(name) - 1;
+    while (end > name && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
+    
+    while (*val == ' ' || *val == '\t' || *val == '\n') val++;
+    end = val + strlen(val) - 1;
+    while (end > val && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
+
+    if (strcasecmp(name, "position") == 0) {
+        if (strcasecmp(val, "absolute") == 0) style->position = POSITION_ABSOLUTE;
+        else if (strcasecmp(val, "relative") == 0) style->position = POSITION_RELATIVE;
+        else if (strcasecmp(val, "fixed") == 0) style->position = POSITION_FIXED;
+        else style->position = POSITION_STATIC;
+    } else if (strcasecmp(name, "top") == 0) style->top = atoi(val);
+    else if (strcasecmp(name, "left") == 0) style->left = atoi(val);
+    else if (strcasecmp(name, "right") == 0) style->right = atoi(val);
+    else if (strcasecmp(name, "bottom") == 0) style->bottom = atoi(val);
+    else if (strcasecmp(name, "width") == 0) style->width = atoi(val);
+    else if (strcasecmp(name, "height") == 0) style->height = atoi(val);
+    else if (strcasecmp(name, "display") == 0) {
+        if (strcasecmp(val, "block") == 0) style->display = DISPLAY_BLOCK;
+        else if (strcasecmp(val, "inline") == 0) style->display = DISPLAY_INLINE;
+        else if (strcasecmp(val, "none") == 0) style->display = DISPLAY_NONE;
+    }
+}
+
+static void parse_inline_style(style_t *style, const char *css) {
+    if (!css) return;
+    char *copy = strdup(css);
+    if (!copy) return;
+    
+    char *p = copy;
+    while (*p) {
+        char *end = strchr(p, ';');
+        if (end) *end = '\0';
+        
+        char *colon = strchr(p, ':');
+        if (colon) {
+            *colon = '\0';
+            parse_css_property(style, p, colon + 1);
+        }
+        
+        if (!end) break;
+        p = end + 1;
+    }
+    free(copy);
+}
+
 void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
@@ -277,7 +327,9 @@ void style_compute(node_t *node) {
     // Process attributes
     attr_t *attr = node->attributes;
     while (attr) {
-        if (strcasecmp(attr->name, "align") == 0 && attr->value) {
+        if (strcasecmp(attr->name, "style") == 0 && attr->value) {
+            parse_inline_style(style, attr->value);
+        } else if (strcasecmp(attr->name, "align") == 0 && attr->value) {
             if (strcasecmp(attr->value, "center") == 0) style->text_align = TEXT_ALIGN_CENTER;
             else if (strcasecmp(attr->value, "right") == 0) style->text_align = TEXT_ALIGN_RIGHT;
             else if (strcasecmp(attr->value, "left") == 0) style->text_align = TEXT_ALIGN_LEFT;

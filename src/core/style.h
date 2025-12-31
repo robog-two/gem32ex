@@ -35,6 +35,13 @@ typedef enum {
     FONT_FAMILY_MONOSPACE
 } font_family_t;
 
+typedef enum {
+    POSITION_STATIC,
+    POSITION_RELATIVE,
+    POSITION_ABSOLUTE,
+    POSITION_FIXED
+} position_t;
+
 typedef struct {
     uint32_t color;
     uint32_t bg_color;
@@ -42,6 +49,10 @@ typedef struct {
     int padding_top, padding_bottom, padding_left, padding_right;
     int border_width;
     int width, height;
+    
+    // Positioning
+    position_t position;
+    int top, right, bottom, left;
     
     // Font properties
     int font_size;   // In pixels (approx)

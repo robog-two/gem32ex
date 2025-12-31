@@ -78,6 +78,11 @@ static void flush_line(line_info_t *line, int x_start, int *y_cursor, int availa
         }
 
         current_x += child->fragment.border_box.width;
+
+        if (child->node->style->position == POSITION_RELATIVE) {
+            child->fragment.border_box.x += child->node->style->left;
+            child->fragment.border_box.y += child->node->style->top;
+        }
     }
 
     *y_cursor += line_height;
@@ -89,6 +94,15 @@ static void flush_line(line_info_t *line, int x_start, int *y_cursor, int availa
 
 static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, int x_start, int *y_cursor, int available_width, text_align_t align, constraint_space_t space) {
     if (!item || item->node->style->display == DISPLAY_NONE) return;
+
+    if (item->node->style->position == POSITION_ABSOLUTE || item->node->style->position == POSITION_FIXED) {
+        layout_compute(item, space);
+        int dx = 0, dy = 0;
+        get_cumulative_offset(item, &dx, &dy);
+        item->fragment.border_box.x = item->node->style->left - dx;
+        item->fragment.border_box.y = item->node->style->top - dy;
+        return;
+    }
 
     if (item->node->type == DOM_NODE_TEXT && item->node->content) {
         int w, h, baseline;
@@ -215,6 +229,24 @@ static void layout_table(layout_box_t *box, constraint_space_t space) {
 }
 
 
+static void get_cumulative_offset(layout_box_t *box, int *dx, int *dy) {
+    *dx = 0;
+    *dy = 0;
+    if (!box || !box->parent) return;
+    
+    // Start from parent, as box->x is relative to parent
+    layout_box_t *p = box->parent;
+    while (p) {
+        if (p->node->style->position != POSITION_STATIC || !p->parent) {
+             // Found the anchor (positioned element or root)
+             break;
+        }
+        *dx += p->fragment.border_box.x;
+        *dy += p->fragment.border_box.y;
+        p = p->parent;
+    }
+}
+
 void layout_compute(layout_box_t *box, constraint_space_t space) {
     if (!box || !box->node || !box->node->style) return;
     style_t *style = box->node->style;
@@ -264,6 +296,18 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         int is_first_child = 1;
         while (child) {
             if (child->node->style->display == DISPLAY_NONE) { child = child->next_sibling; continue; }
+            
+            if (child->node->style->position == POSITION_ABSOLUTE || child->node->style->position == POSITION_FIXED) {
+                constraint_space_t child_space = {box->fragment.content_box.width, 0, 1, 0};
+                layout_compute(child, child_space);
+                int dx = 0, dy = 0;
+                get_cumulative_offset(child, &dx, &dy);
+                child->fragment.border_box.x = child->node->style->left - dx;
+                child->fragment.border_box.y = child->node->style->top - dy;
+                child = child->next_sibling;
+                continue;
+            }
+
             int collapse = 0;
             if (is_block(child->node)) {
                 int cur_mt = child->node->style->margin_top;
@@ -299,6 +343,12 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
             child->fragment.border_box.y = child_y;
 
             layout_compute(child, child_space);
+            
+            if (child->node->style->position == POSITION_RELATIVE) {
+                child->fragment.border_box.x += child->node->style->left;
+                child->fragment.border_box.y += child->node->style->top;
+            }
+
             child_y += child->fragment.border_box.height;
             if (is_block(child->node)) prev_margin_bottom = child->node->style->margin_bottom;
             child = child->next_sibling;
@@ -356,6 +406,7 @@ layout_box_t* layout_create_tree(node_t *root, int container_width) {
     layout_box_t *last_child_box = NULL;
     while (child_node) {
         layout_box_t *child_box = layout_create_tree(child_node, container_width);
+        child_box->parent = box;
         if (!box->first_child) box->first_child = child_box;
         else last_child_box->next_sibling = child_box;
         last_child_box = child_box;
