@@ -4,6 +4,10 @@
 #include "core/platform.h"
 #include "core/log.h"
 
+#ifndef WINGDIPAPI
+#define WINGDIPAPI __stdcall
+#endif
+
 // --- GDI+ Flat API Definitions ---
 typedef struct GdiplusStartupInput {
     UINT32 GdiplusVersion;
