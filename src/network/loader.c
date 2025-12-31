@@ -17,7 +17,7 @@ static const char* get_attr(node_t *node, const char *name) {
 void loader_fetch_resources(node_t *node, const char *base_url) {
     if (!node) return;
 
-    if (node->type == NODE_ELEMENT) {
+    if (node->type == DOM_NODE_ELEMENT) {
         if (strcasecmp(node->tag_name, "img") == 0) {
             const char *src = get_attr(node, "src");
             if (src) {

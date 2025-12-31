@@ -6,8 +6,8 @@
 #include "style.h"
 
 typedef enum {
-    NODE_ELEMENT,
-    NODE_TEXT
+    DOM_NODE_ELEMENT,
+    DOM_NODE_TEXT
 } node_type_t;
 
 typedef struct attr_s {

@@ -14,7 +14,7 @@ void style_init_default(style_t *style) {
 void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
-    if (node->type == NODE_ELEMENT) {
+    if (node->type == DOM_NODE_ELEMENT) {
         if (strcasecmp(node->tag_name, "div") == 0 ||
             strcasecmp(node->tag_name, "p") == 0 ||
             strcasecmp(node->tag_name, "h1") == 0 ||

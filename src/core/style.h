@@ -23,9 +23,8 @@ typedef struct {
 } style_t;
 
 struct node_s;
-typedef struct node_s node_t;
 
 void style_init_default(style_t *style);
-void style_compute(node_t *node);
+void style_compute(struct node_s *node);
 
 #endif // STYLE_H

@@ -61,7 +61,7 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
         box->dimensions.height = box->node->style->height;
     } else {
         box->dimensions.height = current_y - box->dimensions.y;
-        if (box->dimensions.height < 20 && box->node->type == NODE_TEXT) {
+        if (box->dimensions.height < 20 && box->node->type == DOM_NODE_TEXT) {
              box->dimensions.height = 20; // Default height for text
         }
     }

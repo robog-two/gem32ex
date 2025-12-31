@@ -15,7 +15,7 @@ static int is_void_element(const char *tag) {
 node_t* html_parse(const char *html) {
     if (!html) return NULL;
 
-    node_t *root = node_create(NODE_ELEMENT);
+    node_t *root = node_create(DOM_NODE_ELEMENT);
     root->tag_name = strdup("root");
     node_t *current = root;
 
@@ -45,7 +45,7 @@ node_t* html_parse(const char *html) {
                 while (*p && *p != '>') p++;
                 if (*p) p++;
             } else {
-                node_t *new_node = node_create(NODE_ELEMENT);
+                node_t *new_node = node_create(DOM_NODE_ELEMENT);
                 new_node->tag_name = strdup(tag_name);
                 
                 // Parse attributes
@@ -113,7 +113,7 @@ node_t* html_parse(const char *html) {
                 }
                 
                 if (!only_ws) {
-                    node_t *text = node_create(NODE_TEXT);
+                    node_t *text = node_create(DOM_NODE_TEXT);
                     text->content = malloc(len + 1);
                     memcpy(text->content, start, len);
                     text->content[len] = '\0';
