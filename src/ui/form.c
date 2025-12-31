@@ -29,6 +29,8 @@ static char* url_encode(const char *str) {
     while (*p) {
         if (isalnum((unsigned char)*p) || *p == '-' || *p == '.' || *p == '_' || *p == '~') {
             *d++ = *p;
+        } else if (*p == ' ') {
+            *d++ = '+';
         } else {
             sprintf(d, "%%%02X", (unsigned char)*p);
             d += 3;
@@ -43,7 +45,10 @@ static void collect_inputs(node_t *root, char **buffer, size_t *size) {
     if (!root) return;
 
     if (root->type == DOM_NODE_ELEMENT && root->tag_name) {
-        if (strcasecmp(root->tag_name, "input") == 0 || strcasecmp(root->tag_name, "textarea") == 0) {
+        if (strcasecmp(root->tag_name, "input") == 0 || 
+            strcasecmp(root->tag_name, "textarea") == 0 ||
+            strcasecmp(root->tag_name, "select") == 0 ||
+            strcasecmp(root->tag_name, "button") == 0) {
             const char *name = node_get_attr(root, "name");
             if (name) {
                 const char *val = root->current_value ? root->current_value : node_get_attr(root, "value");
@@ -131,7 +136,11 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url, char 
     } else {
         // GET - append query string
         char full_url[4096];
-        snprintf(full_url, sizeof(full_url), "%s?%s", target_url, body);
+        if (strlen(body) > 0) {
+            snprintf(full_url, sizeof(full_url), "%s?%s", target_url, body);
+        } else {
+            strncpy(full_url, target_url, sizeof(full_url));
+        }
         if (out_url) strncpy(out_url, full_url, out_url_size);
         res = http_fetch(full_url);
     }

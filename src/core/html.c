@@ -89,7 +89,9 @@ node_t* html_parse(const char *html) {
                 }
                 
                 // Initialize current_value for inputs
-                if (strcasecmp(tag_name, "input") == 0) {
+                if (strcasecmp(tag_name, "input") == 0 || 
+                    strcasecmp(tag_name, "textarea") == 0 ||
+                    strcasecmp(tag_name, "select") == 0) {
                     const char *val = node_get_attr(new_node, "value");
                     if (val) new_node->current_value = strdup(val);
                 }

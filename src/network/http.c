@@ -68,7 +68,16 @@ static network_response_t* perform_http_request(const char *url, const char *met
         headersLen = strlen(headers);
     }
 
-    BOOL sent = HttpSendRequest(hRequest, headers, headersLen, (LPVOID)body, body ? strlen(body) : 0);
+    BOOL sent = HttpSendRequest(hRequest, headers, headersLen, (LPVOID)body, body ? (DWORD)strlen(body) : 0);
+
+    // Debug logging
+    FILE *f = fopen("debug.log", "a");
+    if (f) {
+        fprintf(f, "[HTTP] %s %s\n", method, url);
+        if (body) fprintf(f, "[BODY] %s\n", body);
+        fclose(f);
+    }
+
     if (!sent) {
         InternetCloseHandle(hRequest);
         InternetCloseHandle(hConnect);
