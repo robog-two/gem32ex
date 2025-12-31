@@ -87,119 +87,73 @@ static void flush_line(line_info_t *line, int x_start, int *y_cursor, int availa
     line->max_descent = 0;
 }
 
+static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, int x_start, int *y_cursor, int available_width, text_align_t align, constraint_space_t space) {
+    if (!item || item->node->style->display == DISPLAY_NONE) return;
+
+    if (item->node->type == DOM_NODE_TEXT && item->node->content) {
+        int w, h, baseline;
+        platform_measure_text(item->node->content, item->node->style, -1, &w, &h, &baseline);
+
+        if (line->width + w > available_width && line->count > 0) {
+            flush_line(line, x_start, y_cursor, available_width, align);
+        }
+
+        if (w > available_width) {
+            platform_measure_text(item->node->content, item->node->style, available_width, &w, &h, &baseline);
+        }
+
+        item->fragment.border_box.width = w;
+        item->fragment.border_box.height = h;
+        item->fragment.baseline = baseline;
+
+        if (line->count < MAX_LINE_FRAGMENTS) {
+            line->items[line->count++] = item;
+            line->width += w;
+            if (baseline > line->max_ascent) line->max_ascent = baseline;
+            if ((h - baseline) > line->max_descent) line->max_descent = h - baseline;
+        }
+    } else if (item->node->style->display == DISPLAY_INLINE && is_inline_container(item->node->tag_name)) {
+        layout_box_t *child = item->first_child;
+        while (child) {
+            layout_prepare_inline_item(child, line, x_start, y_cursor, available_width, align, space);
+            child = child->next_sibling;
+        }
+    } else {
+        // Atomic inline-block or other
+        layout_compute(item, space);
+        int child_w = item->fragment.border_box.width;
+        int child_h = item->fragment.border_box.height;
+
+        if (line->width + child_w > available_width && line->count > 0) {
+            flush_line(line, x_start, y_cursor, available_width, align);
+        }
+
+        if (line->count < MAX_LINE_FRAGMENTS) {
+            line->items[line->count++] = item;
+            line->width += child_w;
+            if (child_h > line->max_ascent) line->max_ascent = child_h;
+        }
+    }
+}
+
 /*
  * Layouts children in a horizontal flow (inline context).
  * Handles text measurement, line wrapping, and vertical alignment within lines.
- *
- * NOTE: To simplify the engine, nested inline elements (e.g., <b><i>text</i></b>) are
- * "flattened" onto a stack. This avoids deep recursion for inline formatting contexts
- * and treats all inline content as a flat sequence of atomic boxes (text runs or
- * atomic inline-blocks).
  */
 static void layout_inline_children(layout_box_t *box, constraint_space_t space, int *y_cursor) {
     line_info_t line = {0};
     
     int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
+    text_align_t align = box->node->style->text_align;
 
     layout_box_t *child = box->first_child;
     while (child) {
-        if (child->node->style->display == DISPLAY_NONE) {
-            child = child->next_sibling;
-            continue;
-        }
-
-        int child_w = 0, child_h = 0, child_ascent = 0, child_descent = 0;
-
-        if (child->node->type == DOM_NODE_TEXT && child->node->content) {
-            int w, h, baseline;
-            platform_measure_text(child->node->content, child->node->style, -1, &w, &h, &baseline);
-
-            if (line.width + w > available_width && line.count > 0) {
-                flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
-            }
-
-            if (w > available_width) {
-                platform_measure_text(child->node->content, child->node->style, available_width, &w, &h, &baseline);
-            }
-
-            child_w = w; child_h = h;
-            child->fragment.border_box.width = w;
-            child->fragment.border_box.height = h;
-            child->fragment.baseline = baseline;
-            child_ascent = baseline;
-            child_descent = h - baseline;
-        } else {
-            if (child->node->style->display == DISPLAY_INLINE &&
-                is_inline_container(child->node->tag_name)) {
-
-                layout_box_t *stack[32];
-                int stack_size = 0;
-                stack[stack_size++] = child;
-
-                while (stack_size > 0) {
-                    layout_box_t *current = stack[--stack_size];
-                    layout_box_t *grandchild = current->first_child;
-
-                    while (grandchild) {
-                        if (grandchild->node->type == DOM_NODE_TEXT && grandchild->node->content) {
-                            int w, h, baseline;
-                            platform_measure_text(grandchild->node->content, grandchild->node->style, -1, &w, &h, &baseline);
-
-                            if (line.width + w > available_width && line.count > 0) {
-                                flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
-                            }
-
-                            if (w > available_width) {
-                                platform_measure_text(grandchild->node->content, grandchild->node->style, available_width, &w, &h, &baseline);
-                            }
-
-                            grandchild->fragment.border_box.width = w;
-                            grandchild->fragment.border_box.height = h;
-                            grandchild->fragment.baseline = baseline;
-
-                            if (line.count < MAX_LINE_FRAGMENTS) {
-                                line.items[line.count++] = grandchild;
-                                line.width += w;
-                                if (baseline > line.max_ascent) line.max_ascent = baseline;
-                                if ((h - baseline) > line.max_descent) line.max_descent = h - baseline;
-                            }
-                        } else if (grandchild->node->style->display == DISPLAY_INLINE &&
-                                   is_inline_container(grandchild->node->tag_name)) {
-                            // Nested inline container - add to stack to process its children
-                            if (stack_size < 32) {
-                                stack[stack_size++] = grandchild;
-                            }
-                        }
-                        grandchild = grandchild->next_sibling;
-                    }
-                }
-
-                child = child->next_sibling;
-                continue;
-            } else {
-                layout_compute(child, space);
-                child_w = child->fragment.border_box.width;
-                child_h = child->fragment.border_box.height;
-                child_ascent = child_h;
-                child_descent = 0;
-
-                if (line.width + child_w > available_width && line.count > 0) {
-                    flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
-                }
-            }
-        }
-
-        if (line.count < MAX_LINE_FRAGMENTS) {
-            line.items[line.count++] = child;
-            line.width += child_w;
-            if (child_ascent > line.max_ascent) line.max_ascent = child_ascent;
-            if (child_descent > line.max_descent) line.max_descent = child_descent;
-        }
+        layout_prepare_inline_item(child, &line, x_start, y_cursor, available_width, align, space);
         child = child->next_sibling;
     }
 
-    flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+    flush_line(&line, x_start, y_cursor, available_width, align);
 }
 
 
