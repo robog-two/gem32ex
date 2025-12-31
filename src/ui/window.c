@@ -139,7 +139,18 @@ static void HandleClick(HWND hContent, int x, int y) {
 
     if (node && node->type == DOM_NODE_ELEMENT && node->tag_name) {
         // Handle Focus
-        if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "textarea") == 0) {
+        int is_editable = 0;
+        if (strcasecmp(node->tag_name, "textarea") == 0) is_editable = 1;
+        else if (strcasecmp(node->tag_name, "input") == 0) {
+            const char *type = node_get_attr(node, "type");
+            if (!type || (strcasecmp(type, "text") == 0 || strcasecmp(type, "password") == 0 || 
+                          strcasecmp(type, "email") == 0 || strcasecmp(type, "search") == 0 ||
+                          strcasecmp(type, "tel") == 0 || strcasecmp(type, "url") == 0)) {
+                is_editable = 1;
+            }
+        }
+
+        if (is_editable) {
             g_focused_node = node;
             SetFocus(hContent);
         } else {
@@ -148,9 +159,11 @@ static void HandleClick(HWND hContent, int x, int y) {
 
         int is_submit = 0;
         if (strcasecmp(node->tag_name, "button") == 0) is_submit = 1;
-        if (strcasecmp(node->tag_name, "input") == 0) {
+        else if (strcasecmp(node->tag_name, "input") == 0) {
              const char *type = node_get_attr(node, "type");
-             if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) is_submit = 1;
+             if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) {
+                 is_submit = 1;
+             }
         }
 
         if (is_submit) {
