@@ -97,7 +97,6 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                     node->image_size = cached_size;
                     // Extract dimensions from cached image
                     render_extract_image_dimensions(cached_data, cached_size, &node->image_width, &node->image_height);
-                    LOG_DEBUG("Image %s (cached): extracted dimensions %dx%d from %zu bytes", full_url, node->image_width, node->image_height, cached_size);
                 } else {
                     // Fetch from network
                     network_response_t *res = network_fetch(full_url);
@@ -107,7 +106,6 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                         node->image_size = res->size;
                         // Extract dimensions before caching
                         render_extract_image_dimensions(res->data, res->size, &node->image_width, &node->image_height);
-                        LOG_INFO("Image %s: extracted dimensions %dx%d from %zu bytes", full_url, node->image_width, node->image_height, res->size);
                         // Cache for later
                         cache_put_image(full_url, res->data, res->size);
                         res->data = NULL; // Take ownership
