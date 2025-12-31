@@ -8,12 +8,12 @@
 #include "test_ui.h"
 
 static int test_tls_impl() {
-    tls_connection_t *conn = tls_connect("google.com", 443);
+    tls_connection_t *conn = tls_connect("www.google.com", 443);
     if (!conn) {
         LOG_ERROR("TLS connection failed");
         return 0;
     }
-    const char *req = "HEAD / HTTP/1.0\r\nHost: google.com\r\n\r\n";
+    const char *req = "HEAD / HTTP/1.0\r\nHost: www.google.com\r\n\r\n";
     if (tls_send(conn, req, (int)strlen(req)) <= 0) {
         LOG_ERROR("TLS send failed");
         tls_close(conn);

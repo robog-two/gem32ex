@@ -73,16 +73,19 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
     BOOL bDone = FALSE;
 
     while (!bDone) {
-        int n = recv(s, readBuf + readOffset, sizeof(readBuf) - readOffset, 0);
-        if (n < 0) {
-            LOG_ERROR("Handshake recv failed: %lu", GetLastError());
-            return SEC_E_INTERNAL_ERROR;
+        // Read data if we don't have any or if the last call needed more
+        if (readOffset == 0 || scRet == SEC_E_INCOMPLETE_MESSAGE) {
+            int n = recv(s, readBuf + readOffset, sizeof(readBuf) - readOffset, 0);
+            if (n < 0) {
+                LOG_ERROR("Handshake recv failed: %lu", GetLastError());
+                return SEC_E_INTERNAL_ERROR;
+            }
+            if (n == 0) {
+                LOG_ERROR("Handshake connection closed by peer");
+                return SEC_E_INTERNAL_ERROR;
+            }
+            readOffset += n;
         }
-        if (n == 0) {
-            LOG_ERROR("Handshake connection closed by peer");
-            return SEC_E_INTERNAL_ERROR;
-        }
-        readOffset += n;
 
         inBufferDesc.ulVersion = SECBUFFER_VERSION;
         inBufferDesc.cBuffers = 2;
@@ -97,7 +100,6 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
         outBuffer[0].pvBuffer = NULL;
         outBuffer[0].cbBuffer = 0;
 
-        // Passing szHostName to every call can help with SNI on some SChannel versions
         scRet = pSSPI->InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
 
         if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED || 
@@ -117,27 +119,28 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
                     *extra_data = malloc(inBuffer[1].cbBuffer);
                     if (*extra_data) {
-                        memcpy(*extra_data, (char*)inBuffer[0].pvBuffer + (inBuffer[0].cbBuffer - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
+                        memcpy(*extra_data, (char*)readBuf + (readOffset - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
                         *extra_data_len = inBuffer[1].cbBuffer;
                     }
                 }
                 bDone = TRUE;
             } else {
+                // SEC_I_CONTINUE_NEEDED
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
-                    memmove(readBuf, (char*)inBuffer[0].pvBuffer + (inBuffer[0].cbBuffer - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
+                    memmove(readBuf, (char*)readBuf + (readOffset - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
                     readOffset = inBuffer[1].cbBuffer;
                 } else {
                     readOffset = 0;
                 }
             }
         } else if (scRet == SEC_E_INCOMPLETE_MESSAGE) {
+            // Need more data, loop will call recv
             continue;
         } else {
             log_sspi_error("InitializeSecurityContext (Final)", scRet);
             return scRet;
         }
     }
-    return SEC_E_OK;
 }
 
 tls_connection_t* tls_connect(const char *host, int port) {
