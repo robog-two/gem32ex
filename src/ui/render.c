@@ -93,8 +93,14 @@ static int is_png(const void *data, size_t size) {
 // Extract PNG dimensions from the IHDR chunk
 // PNG format: 8 byte signature, then IHDR chunk with width/height at bytes 16-24
 static int get_png_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
-    if (!data || size < 24 || !out_width || !out_height) return 0;
-    if (!is_png(data, size)) return 0;
+    if (!data || size < 24 || !out_width || !out_height) {
+        LOG_DEBUG("PNG: invalid params - data=%p size=%zu out_width=%p out_height=%p", data, size, out_width, out_height);
+        return 0;
+    }
+    if (!is_png(data, size)) {
+        LOG_DEBUG("PNG: not a valid PNG signature");
+        return 0;
+    }
 
     const unsigned char *bytes = (const unsigned char *)data;
     // PNG structure:
@@ -106,10 +112,17 @@ static int get_png_dimensions(const void *data, size_t size, int *out_width, int
     unsigned int width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
     unsigned int height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
 
+    LOG_DEBUG("PNG: read bytes at 16-19: %02x %02x %02x %02x = width %u", bytes[16], bytes[17], bytes[18], bytes[19], width);
+    LOG_DEBUG("PNG: read bytes at 20-23: %02x %02x %02x %02x = height %u", bytes[20], bytes[21], bytes[22], bytes[23], height);
+
     // Sanity check - PNG dimensions should be non-zero and reasonable
     // PNG can be up to 2^31-1 in each dimension theoretically, but we limit to reasonable values
-    if (width == 0 || width > 16384 || height == 0 || height > 16384) return 0;
+    if (width == 0 || width > 16384 || height == 0 || height > 16384) {
+        LOG_DEBUG("PNG: dimensions out of range: %u x %u", width, height);
+        return 0;
+    }
 
+    LOG_DEBUG("PNG: extracted dimensions %u x %u", width, height);
     *out_width = (int)width;
     *out_height = (int)height;
     return 1;
@@ -181,21 +194,27 @@ void render_extract_image_dimensions(const void *data, size_t size, int *out_wid
     if (out_height) *out_height = 0;
 
     if (!data || size == 0 || !out_width || !out_height) {
+        LOG_DEBUG("extract_dimensions: invalid input - data=%p size=%zu", data, size);
         return;
     }
 
+    LOG_DEBUG("extract_dimensions: trying to extract from %zu bytes", size);
+
     // Try PNG first
     if (get_png_dimensions(data, size, out_width, out_height)) {
+        LOG_DEBUG("extract_dimensions: PNG success - %d x %d", *out_width, *out_height);
         return;
     }
 
     // Try JPEG second
     if (get_jpeg_dimensions(data, size, out_width, out_height)) {
+        LOG_DEBUG("extract_dimensions: JPEG success - %d x %d", *out_width, *out_height);
         return;
     }
 
     // For other formats (BMP, GIF, etc.), we'd need format-specific parsers
     // For now, default to reasonable dimensions if format unknown
+    LOG_DEBUG("extract_dimensions: unknown format, using defaults");
     *out_width = 100;
     *out_height = 100;
 }
