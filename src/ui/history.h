@@ -1,6 +1,8 @@
 #ifndef HISTORY_H
 #define HISTORY_H
 
+#include <stddef.h>
+
 typedef struct history_node_s {
     char *url;
     char *title;
