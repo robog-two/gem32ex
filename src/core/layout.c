@@ -283,6 +283,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         } else {
             box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
         }
+        LOG_INFO("IMG layout: image_width=%d border_box.width=%d (bw=%d pl=%d pr=%d)", box->node->image_width, box->fragment.border_box.width, bw, pl, pr);
     } else if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
