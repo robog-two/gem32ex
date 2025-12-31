@@ -97,6 +97,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
         outBuffer[0].pvBuffer = NULL;
         outBuffer[0].cbBuffer = 0;
 
+        // Passing szHostName to every call can help with SNI on some SChannel versions
         scRet = pSSPI->InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
 
         if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED || 
@@ -169,7 +170,10 @@ tls_connection_t* tls_connect(const char *host, int port) {
     
     // SCH_CRED_NO_DEFAULT_CREDS: Don't use current user's certs
     // SCH_CRED_MANUAL_CRED_VALIDATION: We'll check certs later if needed, avoids some early fails
-    schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION;
+    schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | 
+                           SCH_CRED_MANUAL_CRED_VALIDATION |
+                           SCH_CRED_IGNORE_NO_REVOCATION_CHECK |
+                           SCH_CRED_IGNORE_REVOCATION_OFFLINE;
 
     if (conn->pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &conn->hCreds, NULL) != SEC_E_OK) {
         LOG_ERROR("AcquireCredentialsHandle failed");
