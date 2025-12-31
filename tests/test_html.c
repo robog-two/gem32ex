@@ -9,8 +9,8 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
     if (!text) { *out_width = 0; *out_height = 0; return; }
     
     int len = strlen(text);
-    int char_w = 8;
-    int char_h = 16;
+    int char_w = (style && style->font_size > 0) ? style->font_size / 2 : 8; // Approx width
+    int char_h = (style && style->font_size > 0) ? style->font_size : 16;
     
     int total_w = len * char_w;
     

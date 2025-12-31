@@ -3,6 +3,20 @@
 #include <olectl.h>
 #include "core/platform.h"
 
+static HFONT get_font(style_t *style) {
+    int height = -12; // Default
+    int weight = FW_NORMAL;
+
+    if (style) {
+        if (style->font_size > 0) height = -style->font_size;
+        if (style->font_weight >= 700) weight = FW_BOLD;
+    }
+
+    return CreateFont(height, 0, 0, 0, weight, FALSE, FALSE, FALSE, 
+                      DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, 
+                      DEFAULT_QUALITY, FF_DONTCARE, "Arial");
+}
+
 // Implementation of core/platform.h interface
 void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height) {
     if (!text || !out_width || !out_height) return;
@@ -10,8 +24,7 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
     // Create a temporary DC for measurement
     HDC hdc = CreateCompatibleDC(NULL);
     
-    // Select default font (same as Render)
-    HFONT hFont = GetStockObject(DEFAULT_GUI_FONT);
+    HFONT hFont = get_font(style);
     HFONT oldFont = SelectObject(hdc, hFont);
 
     RECT r = {0, 0, 0, 0};
@@ -33,6 +46,7 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
     *out_height = r.bottom - r.top;
 
     SelectObject(hdc, oldFont);
+    DeleteObject(hFont);
     DeleteDC(hdc);
 }
 
@@ -106,8 +120,14 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
         set_color_from_style(hdc, box->node->style);
         SetBkMode(hdc, TRANSPARENT);
         
+        HFONT hFont = get_font(box->node->style);
+        HFONT oldFont = SelectObject(hdc, hFont);
+
         RECT r = {x, y, x + w, y + h};
         DrawText(hdc, box->node->content, -1, &r, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+
+        SelectObject(hdc, oldFont);
+        DeleteObject(hFont);
     }
 
     layout_box_t *child = box->first_child;

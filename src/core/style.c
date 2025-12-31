@@ -10,15 +10,24 @@ void style_init_default(style_t *style) {
     style->color = 0x000000; // Black
     style->bg_color = 0xFFFFFF; // White
     style->display = DISPLAY_INLINE; // Default is inline
+    style->font_size = 16;   // Default 16px
+    style->font_weight = 400; // Normal
 }
 
 void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
+    // Inherit font properties from parent
+    if (node->parent && node->parent->style) {
+        node->style->font_size = node->parent->style->font_size;
+        node->style->font_weight = node->parent->style->font_weight;
+        node->style->color = node->parent->style->color;
+    }
+
     style_t *style = node->style;
 
     if (node->type == DOM_NODE_ELEMENT) {
-        if (strcasecmp(node->tag_name, "root") == 0 ||
+        if (strcasecmp(node->tag_name, "root") == 0 || 
             strcasecmp(node->tag_name, "html") == 0) {
             style->display = DISPLAY_BLOCK;
         } else if (strcasecmp(node->tag_name, "script") == 0 ||
@@ -47,14 +56,24 @@ void style_compute(node_t *node) {
             style->margin_top = style->margin_bottom = 16;
         } else if (strcasecmp(node->tag_name, "h1") == 0) {
             style->display = DISPLAY_BLOCK;
-            style->margin_top = style->margin_bottom = 21; // 0.67em
+            style->margin_top = style->margin_bottom = 21; 
             style->color = 0x000000;
+            style->font_size = 32;
+            style->font_weight = 700;
         } else if (strcasecmp(node->tag_name, "h2") == 0) {
             style->display = DISPLAY_BLOCK;
-            style->margin_top = style->margin_bottom = 20; // 0.83em
+            style->margin_top = style->margin_bottom = 20; 
+            style->font_size = 24;
+            style->font_weight = 700;
         } else if (strcasecmp(node->tag_name, "h3") == 0) {
             style->display = DISPLAY_BLOCK;
-            style->margin_top = style->margin_bottom = 18; // 1em
+            style->margin_top = style->margin_bottom = 18; 
+            style->font_size = 19;
+            style->font_weight = 700;
+        } else if (strcasecmp(node->tag_name, "b") == 0 ||
+                   strcasecmp(node->tag_name, "strong") == 0) {
+            style->display = DISPLAY_INLINE;
+            style->font_weight = 700;
         } else if (strcasecmp(node->tag_name, "ul") == 0 || 
                    strcasecmp(node->tag_name, "ol") == 0) {
             style->display = DISPLAY_BLOCK;

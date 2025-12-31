@@ -25,6 +25,11 @@ typedef struct {
     int padding_top, padding_bottom, padding_left, padding_right;
     int border_width;
     int width, height;
+    
+    // Font properties
+    int font_size;   // In pixels (approx)
+    int font_weight; // 400 = normal, 700 = bold
+    
     display_t display;
     text_align_t text_align;
 } style_t;
