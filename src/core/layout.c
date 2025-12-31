@@ -125,25 +125,91 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
                          tag, child->node->content, w, h, baseline, child->node->style->font_size);
             }
         } else {
-            // Recursively layout child
-            // Note: child position will be set by flush_line relative to *this* box.
-            // But layout_compute needs child to have some constraints.
-            // And layout_compute for INLINE children needs to return size.
-            // The child's recursive layout will set its own children's relative positions (0-based inside child).
-            layout_compute(child, space);
-            child_w = child->fragment.border_box.width;
-            child_h = child->fragment.border_box.height;
-            child_ascent = child_h;
-            child_descent = 0;
+            // For inline containers like <font>, <b>, <span>, flatten their children into this line
+            // instead of treating them as a separate box that would contribute full height
+            if (child->node->style->display == DISPLAY_INLINE &&
+                child->node->tag_name &&
+                (strcasecmp(child->node->tag_name, "font") == 0 ||
+                 strcasecmp(child->node->tag_name, "b") == 0 ||
+                 strcasecmp(child->node->tag_name, "i") == 0 ||
+                 strcasecmp(child->node->tag_name, "span") == 0 ||
+                 strcasecmp(child->node->tag_name, "a") == 0)) {
 
-            if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
-                const char *child_tag = child->node->tag_name ? child->node->tag_name : "?";
-                LOG_INFO("    <%s> inline child <%s>: size=%dx%d, ascent=%d, descent=%d",
-                         tag, child_tag, child_w, child_h, child_ascent, child_descent);
-            }
+                // Process this inline container's children directly in this line
+                // This flattens the inline structure
+                // Use a stack to handle nested inline elements (e.g., <font><font>text</font></font>)
+                layout_box_t *stack[32];
+                int stack_size = 0;
+                stack[stack_size++] = child;
 
-            if (line.width + child_w > available_width && line.count > 0) {
-                flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+                while (stack_size > 0) {
+                    layout_box_t *current = stack[--stack_size];
+                    layout_box_t *grandchild = current->first_child;
+
+                    while (grandchild) {
+                        if (grandchild->node->type == DOM_NODE_TEXT && grandchild->node->content) {
+                            int w, h, baseline;
+                            platform_measure_text(grandchild->node->content, grandchild->node->style, -1, &w, &h, &baseline);
+
+                            if (line.width + w > available_width && line.count > 0) {
+                                flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+                            }
+
+                            if (w > available_width) {
+                                platform_measure_text(grandchild->node->content, grandchild->node->style, available_width, &w, &h, &baseline);
+                            }
+
+                            grandchild->fragment.border_box.width = w;
+                            grandchild->fragment.border_box.height = h;
+                            grandchild->fragment.baseline = baseline;
+
+                            if (line.count < MAX_LINE_FRAGMENTS) {
+                                line.items[line.count++] = grandchild;
+                                line.width += w;
+                                if (baseline > line.max_ascent) line.max_ascent = baseline;
+                                if ((h - baseline) > line.max_descent) line.max_descent = h - baseline;
+                            }
+
+                            if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
+                                LOG_INFO("    <%s> flattened text: content='%.20s...', size=%dx%d, baseline=%d, font_size=%d",
+                                         tag, grandchild->node->content, w, h, baseline, grandchild->node->style->font_size);
+                            }
+                        } else if (grandchild->node->style->display == DISPLAY_INLINE &&
+                                   grandchild->node->tag_name &&
+                                   (strcasecmp(grandchild->node->tag_name, "font") == 0 ||
+                                    strcasecmp(grandchild->node->tag_name, "b") == 0 ||
+                                    strcasecmp(grandchild->node->tag_name, "i") == 0 ||
+                                    strcasecmp(grandchild->node->tag_name, "span") == 0 ||
+                                    strcasecmp(grandchild->node->tag_name, "a") == 0)) {
+                            // Nested inline container - add to stack to process its children
+                            if (stack_size < 32) {
+                                stack[stack_size++] = grandchild;
+                            }
+                        }
+                        grandchild = grandchild->next_sibling;
+                    }
+                }
+
+                // Skip adding the container itself to the line
+                child = child->next_sibling;
+                continue;
+            } else {
+                // For other inline elements (img, input, etc), use full height as ascent
+                layout_compute(child, space);
+                child_w = child->fragment.border_box.width;
+                child_h = child->fragment.border_box.height;
+                child_ascent = child_h;
+                child_descent = 0;
+
+                if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
+                    const char *child_tag = child->node->tag_name ? child->node->tag_name : "?";
+                    LOG_INFO("    <%s> inline child <%s>: size=%dx%d, ascent=%d, descent=%d",
+                             tag, child_tag, child_w, child_h, child_ascent, child_descent);
+                }
+
+                if (line.width + child_w > available_width && line.count > 0) {
+                    flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+                }
             }
         }
 
