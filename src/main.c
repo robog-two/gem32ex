@@ -1,4 +1,5 @@
 #include "ui/window.h"
+#include "ui/render.h"
 #include "core/log.h"
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -7,9 +8,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     log_init();
     LOG_INFO("Application starting...");
+    
+    render_init();
 
     if (!CreateMainWindow(hInstance, nCmdShow)) {
         LOG_ERROR("Failed to create main window");
+        render_cleanup();
         return 1;
     }
 
@@ -18,6 +22,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+    
+    render_cleanup();
 
     return msg.wParam;
 }

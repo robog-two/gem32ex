@@ -4,6 +4,80 @@
 #include "core/platform.h"
 #include "core/log.h"
 
+// --- GDI+ Flat API Definitions ---
+typedef struct GdiplusStartupInput {
+    UINT32 GdiplusVersion;
+    void* DebugEventCallback;
+    BOOL SuppressBackgroundThread;
+    BOOL SuppressExternalCodecs;
+} GdiplusStartupInput;
+
+typedef struct GdiplusStartupOutput {
+    void* NotificationHook;
+    void* NotificationUnhook;
+} GdiplusStartupOutput;
+
+typedef void* GpGraphics;
+typedef void* GpImage;
+typedef void* GpBitmap;
+typedef int GpStatus;
+
+typedef GpStatus (WINGDIPAPI *PFN_GdiplusStartup)(ULONG_PTR*, const GdiplusStartupInput*, GdiplusStartupOutput*);
+typedef void (WINGDIPAPI *PFN_GdiplusShutdown)(ULONG_PTR);
+typedef GpStatus (WINGDIPAPI *PFN_GdipCreateBitmapFromStream)(IStream*, GpBitmap**);
+typedef GpStatus (WINGDIPAPI *PFN_GdipCreateFromHDC)(HDC, GpGraphics**);
+typedef GpStatus (WINGDIPAPI *PFN_GdipDeleteGraphics)(GpGraphics*);
+typedef GpStatus (WINGDIPAPI *PFN_GdipDisposeImage)(GpImage*);
+typedef GpStatus (WINGDIPAPI *PFN_GdipDrawImageRectI)(GpGraphics*, GpImage*, INT, INT, INT, INT);
+
+static HMODULE g_hGdiPlus = NULL;
+static ULONG_PTR g_gdiplusToken = 0;
+static PFN_GdiplusStartup fn_GdiplusStartup = NULL;
+static PFN_GdiplusShutdown fn_GdiplusShutdown = NULL;
+static PFN_GdipCreateBitmapFromStream fn_GdipCreateBitmapFromStream = NULL;
+static PFN_GdipCreateFromHDC fn_GdipCreateFromHDC = NULL;
+static PFN_GdipDeleteGraphics fn_GdipDeleteGraphics = NULL;
+static PFN_GdipDisposeImage fn_GdipDisposeImage = NULL;
+static PFN_GdipDrawImageRectI fn_GdipDrawImageRectI = NULL;
+
+void render_init(void) {
+    g_hGdiPlus = LoadLibrary("gdiplus.dll");
+    if (g_hGdiPlus) {
+        fn_GdiplusStartup = (PFN_GdiplusStartup)GetProcAddress(g_hGdiPlus, "GdiplusStartup");
+        fn_GdiplusShutdown = (PFN_GdiplusShutdown)GetProcAddress(g_hGdiPlus, "GdiplusShutdown");
+        fn_GdipCreateBitmapFromStream = (PFN_GdipCreateBitmapFromStream)GetProcAddress(g_hGdiPlus, "GdipCreateBitmapFromStream");
+        fn_GdipCreateFromHDC = (PFN_GdipCreateFromHDC)GetProcAddress(g_hGdiPlus, "GdipCreateFromHDC");
+        fn_GdipDeleteGraphics = (PFN_GdipDeleteGraphics)GetProcAddress(g_hGdiPlus, "GdipDeleteGraphics");
+        fn_GdipDisposeImage = (PFN_GdipDisposeImage)GetProcAddress(g_hGdiPlus, "GdipDisposeImage");
+        fn_GdipDrawImageRectI = (PFN_GdipDrawImageRectI)GetProcAddress(g_hGdiPlus, "GdipDrawImageRectI");
+
+        if (fn_GdiplusStartup && fn_GdipCreateBitmapFromStream) {
+            GdiplusStartupInput input = {1, NULL, FALSE, FALSE};
+            if (fn_GdiplusStartup(&g_gdiplusToken, &input, NULL) != 0) {
+                LOG_ERROR("GdiplusStartup failed");
+                FreeLibrary(g_hGdiPlus);
+                g_hGdiPlus = NULL;
+            } else {
+                LOG_INFO("GDI+ initialized successfully");
+            }
+        } else {
+            LOG_ERROR("Could not locate required GDI+ functions");
+            FreeLibrary(g_hGdiPlus);
+            g_hGdiPlus = NULL;
+        }
+    } else {
+        LOG_WARN("gdiplus.dll not found. PNG support disabled.");
+    }
+}
+
+void render_cleanup(void) {
+    if (g_hGdiPlus && fn_GdiplusShutdown) {
+        fn_GdiplusShutdown(g_gdiplusToken);
+        FreeLibrary(g_hGdiPlus);
+        g_hGdiPlus = NULL;
+    }
+}
+
 static HFONT get_font(style_t *style) {
     int height = -12; // Default
     int weight = FW_NORMAL;
@@ -100,17 +174,42 @@ static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h)
 
     IStream *pStream = NULL;
     if (CreateStreamOnHGlobal(hGlobal, TRUE, &pStream) == S_OK) {
-        IPicture *pPicture = NULL;
-        if (OleLoadPicture(pStream, box->node->image_size, FALSE, &IID_IPicture, (void**)&pPicture) == S_OK) {
-            long hmWidth, hmHeight;
-            pPicture->lpVtbl->get_Width(pPicture, &hmWidth);
-            pPicture->lpVtbl->get_Height(pPicture, &hmHeight);
-
-            pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
-            pPicture->lpVtbl->Release(pPicture);
-        } else {
-            LOG_ERROR("OleLoadPicture failed for image data of size %zu", box->node->image_size);
+        int drawn = 0;
+        
+        // Try GDI+ first (supports PNG)
+        if (g_hGdiPlus && fn_GdipCreateBitmapFromStream && fn_GdipCreateFromHDC) {
+            GpBitmap *bitmap = NULL;
+            if (fn_GdipCreateBitmapFromStream(pStream, &bitmap) == 0 && bitmap) {
+                GpGraphics *graphics = NULL;
+                if (fn_GdipCreateFromHDC(hdc, &graphics) == 0 && graphics) {
+                    if (fn_GdipDrawImageRectI(graphics, (GpImage*)bitmap, x, y, w, h) == 0) {
+                        drawn = 1;
+                    }
+                    fn_GdipDeleteGraphics(graphics);
+                }
+                fn_GdipDisposeImage((GpImage*)bitmap);
+            }
+            // If GDI+ failed (e.g. invalid format it can't handle), we fall back to OleLoadPicture
+            // Reset stream position for fallback
+            LARGE_INTEGER li = {0};
+            pStream->lpVtbl->Seek(pStream, li, STREAM_SEEK_SET, NULL);
         }
+
+        if (!drawn) {
+            // Fallback to OLE (BMP, JPG, GIF, ICO)
+            IPicture *pPicture = NULL;
+            if (OleLoadPicture(pStream, box->node->image_size, FALSE, &IID_IPicture, (void**)&pPicture) == S_OK) {
+                long hmWidth, hmHeight;
+                pPicture->lpVtbl->get_Width(pPicture, &hmWidth);
+                pPicture->lpVtbl->get_Height(pPicture, &hmHeight);
+
+                pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
+                pPicture->lpVtbl->Release(pPicture);
+            } else {
+                 LOG_ERROR("Image load failed (GDI+ and OleLoadPicture) for size %lu", (unsigned long)box->node->image_size);
+            }
+        }
+        
         pStream->lpVtbl->Release(pStream);
     } else {
         LOG_ERROR("CreateStreamOnHGlobal failed for image data");
