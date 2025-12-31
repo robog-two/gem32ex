@@ -6,14 +6,18 @@
 #include <string.h>
 #include <stdio.h>
 
-void network_response_free(network_response_t *res) {
-    if (res) {
-        if (res->data) free(res->data);
-        if (res->content_type) free(res->content_type);
-        if (res->final_url) free(res->final_url);
-        free(res);
-    }
-}
+#ifndef INTERNET_OPTION_SECURITY_PROTOCOLS
+#define INTERNET_OPTION_SECURITY_PROTOCOLS 31
+#endif
+#ifndef SP_PROT_TLS1_1_CLIENT
+#define SP_PROT_TLS1_1_CLIENT 0x00000200
+#endif
+#ifndef SP_PROT_TLS1_2_CLIENT
+#define SP_PROT_TLS1_2_CLIENT 0x00000800
+#endif
+#ifndef INTERNET_FLAG_IGNORE_REVOCATION
+#define INTERNET_FLAG_IGNORE_REVOCATION 0x00000080
+#endif
 
 static void log_last_error(const char *context) {
     DWORD err = GetLastError();
@@ -46,6 +50,14 @@ static network_response_t* perform_http_request(const char *url, const char *met
         log_last_error("InternetOpen");
         return NULL;
     }
+
+    // Enable TLS 1.1 and 1.2 if possible (XP POSReady 2009 updates)
+    DWORD protocols = INTERNET_FLAG_SECURE_PROTOCOL_SSL2 | 
+                      INTERNET_FLAG_SECURE_PROTOCOL_SSL3 | 
+                      INTERNET_FLAG_SECURE_PROTOCOL_TLS1 |
+                      SP_PROT_TLS1_1_CLIENT |
+                      SP_PROT_TLS1_2_CLIENT;
+    InternetSetOption(hInternet, INTERNET_OPTION_SECURITY_PROTOCOLS, &protocols, sizeof(protocols));
 
     URL_COMPONENTS urlComp = {0};
     urlComp.dwStructSize = sizeof(urlComp);
@@ -85,19 +97,30 @@ static network_response_t* perform_http_request(const char *url, const char *met
         return NULL;
     }
 
-    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES;
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_KEEP_CONNECTION;
     if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
         flags |= INTERNET_FLAG_SECURE;
         flags |= INTERNET_FLAG_IGNORE_CERT_CN_INVALID;
         flags |= INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
+        flags |= INTERNET_FLAG_IGNORE_REVOCATION;
     }
 
-    HINTERNET hRequest = HttpOpenRequest(hConnect, method, full_path, NULL, NULL, NULL, flags, 0);
+    const char *accept[] = {"*/*", NULL};
+    HINTERNET hRequest = HttpOpenRequest(hConnect, method, full_path, NULL, NULL, accept, flags, 0);
     if (!hRequest) {
         log_last_error("HttpOpenRequest");
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return NULL;
+    }
+
+    // Extra security flags for the request handle
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
+        DWORD securityFlags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | 
+                             SECURITY_FLAG_IGNORE_CERT_DATE_INVALID | 
+                             SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+                             SECURITY_FLAG_IGNORE_WRONG_USAGE;
+        InternetSetOption(hRequest, INTERNET_OPTION_SECURITY_FLAGS, &securityFlags, sizeof(securityFlags));
     }
 
     const char *headers = NULL;
