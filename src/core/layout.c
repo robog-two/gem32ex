@@ -389,7 +389,18 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
     }
 
-    if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) box->fragment.border_box.height = 16;
+    // Handle zero-height elements
+    if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) {
+        box->fragment.border_box.height = 16;
+    } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0 && box->fragment.border_box.height == 0) {
+        // Images with no intrinsic height get default size
+        // Use intrinsic height if extracted, otherwise default
+        if (box->node->image_height > 0) {
+            box->fragment.border_box.height = box->node->image_height + (bw * 2) + pt + pb;
+        } else {
+            box->fragment.border_box.height = 100 + (bw * 2) + pt + pb;
+        }
+    }
 
     // Handle iFrames
     if (box->node->iframe_doc) {
