@@ -27,6 +27,7 @@ void layout_free(layout_box_t *box) {
 // width: Width of the content area of the PARENT
 void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
     if (!box || !box->node || !box->node->style) return;
+    if (box->node->style->display == DISPLAY_NONE) return;
 
     // 1. Calculate Horizontal Dimensions (Width, Margins, Padding, Borders)
     

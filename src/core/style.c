@@ -15,13 +15,33 @@ void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
     if (node->type == DOM_NODE_ELEMENT) {
-        if (strcasecmp(node->tag_name, "body") == 0) {
+        if (strcasecmp(node->tag_name, "script") == 0 ||
+            strcasecmp(node->tag_name, "style") == 0 ||
+            strcasecmp(node->tag_name, "head") == 0 ||
+            strcasecmp(node->tag_name, "title") == 0 ||
+            strcasecmp(node->tag_name, "meta") == 0 ||
+            strcasecmp(node->tag_name, "link") == 0 ||
+            strcasecmp(node->tag_name, "noscript") == 0) {
+            node->style->display = DISPLAY_NONE;
+        } else if (strcasecmp(node->tag_name, "body") == 0) {
             node->style->display = DISPLAY_BLOCK;
             node->style->margin_top = 8;
             node->style->margin_bottom = 8;
             node->style->margin_left = 8;
             node->style->margin_right = 8;
-        } else if (strcasecmp(node->tag_name, "div") == 0) {
+        } else if (strcasecmp(node->tag_name, "div") == 0 ||
+                   strcasecmp(node->tag_name, "header") == 0 ||
+                   strcasecmp(node->tag_name, "footer") == 0 ||
+                   strcasecmp(node->tag_name, "nav") == 0 ||
+                   strcasecmp(node->tag_name, "main") == 0 ||
+                   strcasecmp(node->tag_name, "section") == 0 ||
+                   strcasecmp(node->tag_name, "article") == 0 ||
+                   strcasecmp(node->tag_name, "aside") == 0 ||
+                   strcasecmp(node->tag_name, "address") == 0 ||
+                   strcasecmp(node->tag_name, "blockquote") == 0 ||
+                   strcasecmp(node->tag_name, "figure") == 0 ||
+                   strcasecmp(node->tag_name, "form") == 0 ||
+                   strcasecmp(node->tag_name, "hr") == 0) {
             node->style->display = DISPLAY_BLOCK;
         } else if (strcasecmp(node->tag_name, "p") == 0) {
             node->style->display = DISPLAY_BLOCK;
@@ -31,7 +51,6 @@ void style_compute(node_t *node) {
             node->style->display = DISPLAY_BLOCK;
             node->style->margin_top = 22;
             node->style->margin_bottom = 22;
-            // Simplistic font size handling via custom property or just height assumption later
         } else if (strcasecmp(node->tag_name, "h2") == 0) {
             node->style->display = DISPLAY_BLOCK;
             node->style->margin_top = 20;
@@ -40,12 +59,16 @@ void style_compute(node_t *node) {
             node->style->display = DISPLAY_BLOCK;
             node->style->margin_top = 18;
             node->style->margin_bottom = 18;
-        } else if (strcasecmp(node->tag_name, "ul") == 0) {
+        } else if (strcasecmp(node->tag_name, "ul") == 0 || 
+                   strcasecmp(node->tag_name, "ol") == 0 ||
+                   strcasecmp(node->tag_name, "dl") == 0) {
             node->style->display = DISPLAY_BLOCK;
             node->style->margin_top = 16;
             node->style->margin_bottom = 16;
             node->style->padding_left = 40;
-        } else if (strcasecmp(node->tag_name, "li") == 0) {
+        } else if (strcasecmp(node->tag_name, "li") == 0 ||
+                   strcasecmp(node->tag_name, "dt") == 0 ||
+                   strcasecmp(node->tag_name, "dd") == 0) {
             node->style->display = DISPLAY_BLOCK;
         } else if (strcasecmp(node->tag_name, "table") == 0) {
             node->style->display = DISPLAY_TABLE;
