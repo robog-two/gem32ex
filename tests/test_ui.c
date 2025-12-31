@@ -134,13 +134,19 @@ void test_ui_show(void) {
                                WS_VISIBLE | WS_CHILD | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT,
                                10, 75, 680, 380, hwnd, (HMENU)1, hInstance, NULL);
 
-    HIMAGELIST hImg = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 2, 2);
+    HIMAGELIST hImg = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 3, 1);
     
     HICON hCheck = CreateCheckmarkIcon();
     ImageList_AddIcon(hImg, hCheck);
     DestroyIcon(hCheck);
     
     ImageList_AddIcon(hImg, LoadIcon(NULL, IDI_HAND)); // Fail (X)
+
+    // Add a blank icon for logs
+    HBITMAP hbmBlank = CreateBitmap(16, 16, 1, 1, NULL);
+    ImageList_Add(hImg, hbmBlank, hbmBlank);
+    DeleteObject(hbmBlank);
+
     TreeView_SetImageList(hTree, hImg, TVSIL_NORMAL);
 
     // Use monospaced font for the console look
@@ -177,8 +183,10 @@ void test_ui_show(void) {
                 TVINSERTSTRUCT tvi_log = {0};
                 tvi_log.hParent = hItem;
                 tvi_log.hInsertAfter = TVI_LAST;
-                tvi_log.item.mask = TVIF_TEXT;
+                tvi_log.item.mask = TVIF_TEXT | TVIF_IMAGE | TVIF_SELECTEDIMAGE;
                 tvi_log.item.pszText = line;
+                tvi_log.item.iImage = 2; // Blank icon
+                tvi_log.item.iSelectedImage = 2;
                 TreeView_InsertItem(hTree, &tvi_log);
             }
             line = strtok(NULL, "\n");
