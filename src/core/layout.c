@@ -41,22 +41,24 @@ typedef struct {
     int max_descent;
 } line_info_t;
 
-static void flush_line(line_info_t *line, int x_offset, int *y_cursor, int available_width, text_align_t align) {
+static void flush_line(line_info_t *line, int x_start, int *y_cursor, int available_width, text_align_t align) {
     if (line->count == 0) return;
 
     int free_space = available_width - line->width;
-    int x_start = x_offset;
-    if (align == TEXT_ALIGN_CENTER) x_start += free_space / 2;
-    else if (align == TEXT_ALIGN_RIGHT) x_start += free_space;
+    int start_offset = 0;
+    if (align == TEXT_ALIGN_CENTER) start_offset = free_space / 2;
+    else if (align == TEXT_ALIGN_RIGHT) start_offset = free_space;
 
-    if (x_start < x_offset) x_start = x_offset;
+    if (start_offset < 0) start_offset = 0;
 
     int line_height = line->max_ascent + line->max_descent;
     int baseline_y = *y_cursor + line->max_ascent;
 
+    int current_x = x_start + start_offset;
+
     for (int i = 0; i < line->count; i++) {
         layout_box_t *child = line->items[i];
-        child->fragment.border_box.x = x_start;
+        child->fragment.border_box.x = current_x;
         
         // Align to baseline
         if (child->node->type == DOM_NODE_TEXT) {
@@ -66,7 +68,7 @@ static void flush_line(line_info_t *line, int x_offset, int *y_cursor, int avail
             child->fragment.border_box.y = baseline_y - child->fragment.border_box.height;
         }
         
-        x_start += child->fragment.border_box.width;
+        current_x += child->fragment.border_box.width;
     }
 
     *y_cursor += line_height;
@@ -78,7 +80,10 @@ static void flush_line(line_info_t *line, int x_offset, int *y_cursor, int avail
 
 static void layout_inline_children(layout_box_t *box, constraint_space_t space, int *y_cursor) {
     line_info_t line = {0};
-    int x_start = box->fragment.content_box.x;
+    // Relative X start (from parent's content box left edge)
+    // Parent content box x is relative to parent border box.
+    // So if we want child pos relative to parent border box, we start at content box offset.
+    int x_start = box->fragment.content_box.x; 
     int available_width = box->fragment.content_box.width;
     
     layout_box_t *child = box->first_child;
@@ -109,10 +114,15 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
             child_ascent = baseline;
             child_descent = h - baseline;
         } else {
+            // Recursively layout child
+            // Note: child position will be set by flush_line relative to *this* box.
+            // But layout_compute needs child to have some constraints.
+            // And layout_compute for INLINE children needs to return size.
+            // The child's recursive layout will set its own children's relative positions (0-based inside child).
             layout_compute(child, space);
             child_w = child->fragment.border_box.width;
             child_h = child->fragment.border_box.height;
-            child_ascent = child_h; // Treat non-text as having baseline at bottom
+            child_ascent = child_h; 
             child_descent = 0;
 
             if (line.width + child_w > available_width && line.count > 0) {
@@ -153,23 +163,24 @@ static void layout_table(layout_box_t *box, constraint_space_t space) {
     int cell_w = box->fragment.content_box.width / max_cells_in_row;
 
     // 3. Layout rows and cells
-    int child_y = box->fragment.content_box.y;
+    int child_y = box->fragment.content_box.y; // Relative to box
     row = box->first_child;
     while (row) {
         if (row->node->style->display == DISPLAY_TABLE_ROW) {
             row->fragment.border_box.x = box->fragment.content_box.x;
             row->fragment.border_box.y = child_y;
             row->fragment.border_box.width = box->fragment.content_box.width;
-            row->fragment.content_box = row->fragment.border_box;
+            row->fragment.content_box = row->fragment.border_box; // Rows have no padding/border usually
 
-            int x_offset = row->fragment.content_box.x;
+            // For children of row (cells), coordinates relative to ROW
+            int x_offset = 0; // Relative to row
             int max_row_h = 0;
             layout_box_t *cell = row->first_child;
             while (cell) {
                 if (cell->node->style->display == DISPLAY_TABLE_CELL) {
                     constraint_space_t cell_space = {cell_w, 0, 1, 0};
                     cell->fragment.border_box.x = x_offset;
-                    cell->fragment.border_box.y = child_y;
+                    cell->fragment.border_box.y = 0; // Top of row
                     layout_compute(cell, cell_space);
                     if (cell->fragment.border_box.height > max_row_h) max_row_h = cell->fragment.border_box.height;
                     x_offset += cell_w;
@@ -181,7 +192,10 @@ static void layout_table(layout_box_t *box, constraint_space_t space) {
         }
         row = row->next_sibling;
     }
-    box->fragment.border_box.height = child_y - box->fragment.border_box.y + (box->node->style->padding_bottom + box->node->style->border_width);
+    // child_y is the bottom edge of the last row, relative to the table's border box (0,0).
+    // The total height is this bottom edge + padding_bottom + border_width.
+    // Note: box->fragment.content_box.y already accounted for top border/padding.
+    box->fragment.border_box.height = child_y + box->node->style->padding_bottom + box->node->style->border_width;
 }
 
 // --- Main Layout ---
@@ -202,19 +216,27 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         else box->fragment.border_box.width = space.available_width;
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
         box->fragment.border_box.width = (style->width > 0) ? style->width : 100;
+    } else {
+        // Inline container default width 0, grows with content
+        box->fragment.border_box.width = 0;
     }
 
+    // Determine content box relative to border box (0,0)
+    // border_box.x/y will be set by PARENT. Here we just set content offsets relative to self.
+    // Wait, we need content_box absolute offsets? NO.
+    // content_box.x/y should be offsets from border_box (0,0).
+    // So content_box.x = bw + pl.
     box->fragment.content_box.width = box->fragment.border_box.width - (bw * 2 + pl + pr);
     if (box->fragment.content_box.width < 0) box->fragment.content_box.width = 0;
-    box->fragment.content_box.x = box->fragment.border_box.x + bw + pl;
-    box->fragment.content_box.y = box->fragment.border_box.y + bw + pt;
+    box->fragment.content_box.x = bw + pl;
+    box->fragment.content_box.y = bw + pt;
 
     if (style->display == DISPLAY_TABLE) {
         layout_table(box, space);
         return;
     }
 
-    int child_y = box->fragment.content_box.y;
+    int child_y = box->fragment.content_box.y; // Start at content top (relative)
     int has_block_children = 0;
     layout_box_t *c = box->first_child;
     while (c) { if (is_block(c->node)) { has_block_children = 1; break; } c = c->next_sibling; }
@@ -232,8 +254,16 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
                 child_y += collapse;
             }
             constraint_space_t child_space = {box->fragment.content_box.width, 0, 1, 0};
-            child->fragment.border_box.x = box->fragment.content_box.x + child->node->style->margin_left;
+            
+            // Set child position relative to THIS box
+            // child->x = content_left + margin_left
+            if (is_block(child->node)) {
+                 child->fragment.border_box.x = box->fragment.content_box.x + child->node->style->margin_left;
+            } else {
+                 child->fragment.border_box.x = box->fragment.content_box.x; // Wrapped in anon block conceptually
+            }
             child->fragment.border_box.y = child_y;
+            
             layout_compute(child, child_space);
             child_y += child->fragment.border_box.height;
             if (is_block(child->node)) prev_margin_bottom = child->node->style->margin_bottom;
@@ -243,8 +273,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     } else {
         layout_inline_children(box, space, &child_y);
         
-        // For inline containers (like <b>, <span>), the width is the width of the content.
-        // layout_inline_children calculates positions, but we need to sum up the width or find the bounding box.
+        // For inline containers (like <b>, <span>), grow width to fit content
         if (style->display == DISPLAY_INLINE) {
             int max_x = 0;
             layout_box_t *k = box->first_child;
@@ -253,18 +282,23 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
                 if (right_edge > max_x) max_x = right_edge;
                 k = k->next_sibling;
             }
-            // Relative to content box x (which is usually 0 for inline recursion start)
+            // Content width is max_x - content_start
             int content_w = max_x - box->fragment.content_box.x; 
             if (content_w < 0) content_w = 0;
             
-            box->fragment.border_box.width = content_w + (bw * 2) + pl + pr;
+            // Update dims
             box->fragment.content_box.width = content_w;
+            box->fragment.border_box.width = content_w + (bw * 2) + pl + pr;
         }
     }
 
-    int content_height = child_y - (box->fragment.border_box.y + bw + pt);
+    // Height calculation
+    int content_height = child_y - (box->fragment.content_box.y); // child_y is relative to border box top
+    if (content_height < 0) content_height = 0;
+
     if (style->height > 0) box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
     else box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
+    
     if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) box->fragment.border_box.height = 16;
 }
 

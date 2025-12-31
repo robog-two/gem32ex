@@ -144,9 +144,11 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
         DeleteObject(hFont);
     }
 
+    // Pass the current box's absolute position as the offset for children
+    // This assumes children's coordinates are relative to this box.
     layout_box_t *child = box->first_child;
     while (child) {
-        render_tree(hdc, child, offset_x, offset_y);
+        render_tree(hdc, child, x, y);
         child = child->next_sibling;
     }
 }
