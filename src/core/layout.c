@@ -260,26 +260,24 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
     int ml = style->margin_left, mr = style->margin_right;
 
-    if (style->width > 0) {
+    // Replaced elements (img, iframe) have fixed intrinsic dimensions
+    if (box->node->tag_name && (strcasecmp(box->node->tag_name, "img") == 0 || strcasecmp(box->node->tag_name, "iframe") == 0)) {
+        if (style->width > 0) {
+            box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
+        } else if (box->node->image_width > 0) {
+            box->fragment.border_box.width = box->node->image_width + (bw * 2) + pl + pr;
+        } else {
+            box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
+        }
+    } else if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
                style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (style->display == DISPLAY_INLINE) {
-        // Replaced elements (img, iframe) use intrinsic width if available
-        if (box->node->tag_name && (strcasecmp(box->node->tag_name, "img") == 0 || strcasecmp(box->node->tag_name, "iframe") == 0)) {
-            if (box->node->image_width > 0) {
-                box->fragment.border_box.width = box->node->image_width + (bw * 2) + pl + pr;
-            } else {
-                // No intrinsic width, use available space
-                box->fragment.border_box.width = space.available_width - ml - mr;
-                if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
-            }
-        } else {
-            box->fragment.border_box.width = space.available_width - ml - mr;
-            if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
-        }
+        box->fragment.border_box.width = space.available_width - ml - mr;
+        if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else {
         box->fragment.border_box.width = 0;
     }
@@ -391,20 +389,12 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
 
     if (style->height > 0) {
         box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
-    } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        // Replaced element (img): maintain aspect ratio based on intrinsic dimensions
-        if (box->node->image_width > 0 && box->node->image_height > 0) {
-            // Calculate content box width (without padding/border)
-            int content_w = box->fragment.border_box.width - (bw * 2) - pl - pr;
-            // Maintain aspect ratio: height = width * (intrinsic_height / intrinsic_width)
-            int content_h = (content_w * box->node->image_height) / box->node->image_width;
-            box->fragment.border_box.height = content_h + (bw * 2) + pt + pb;
-        } else if (box->node->image_height > 0) {
-            // Only have height, use it
+    } else if (box->node->tag_name && (strcasecmp(box->node->tag_name, "img") == 0 || strcasecmp(box->node->tag_name, "iframe") == 0)) {
+        // Replaced element (img, iframe): use intrinsic height, fallback to 100px
+        if (box->node->image_height > 0) {
             box->fragment.border_box.height = box->node->image_height + (bw * 2) + pt + pb;
         } else {
-            // No intrinsic dimensions, use content height
-            box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
+            box->fragment.border_box.height = 100 + (bw * 2) + pt + pb;
         }
     } else {
         box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
