@@ -12,14 +12,14 @@
 #define SP_PROT_TLS1_2_CLIENT 0x00000800
 #endif
 
-static void log_hex(const char *label, const char *data, int len) {
-    char hex[128];
-    int to_log = len > 32 ? 32 : len;
-    char *p = hex;
-    for (int i = 0; i < to_log; i++) {
-        p += sprintf(p, "%02X ", (unsigned char)data[i]);
+static int send_all(SOCKET s, const char *buf, int len) {
+    int total = 0;
+    while (total < len) {
+        int n = send(s, buf + total, len - total, 0);
+        if (n <= 0) return -1;
+        total += n;
     }
-    LOG_DEBUG("%s [%d bytes]: %s%s", label, len, hex, len > 32 ? "..." : "");
+    return total;
 }
 
 static void log_sspi_error(const char *context, SECURITY_STATUS status) {
@@ -41,23 +41,14 @@ static void log_sspi_error(const char *context, SECURITY_STATUS status) {
     }
 }
 
-static int send_all(SOCKET s, const char *buf, int len) {
-    int total = 0;
-    while (total < len) {
-        int n = send(s, buf + total, len - total, 0);
-        if (n <= 0) return -1;
-        total += n;
-    }
-    return total;
-}
-
 static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI, PCredHandle phCreds, const char* szHostName, PCtxtHandle phContext, char **extra_data, int *extra_data_len) {
     SecBufferDesc outBufferDesc, inBufferDesc;
     SecBuffer outBuffer[1], inBuffer[2];
-    DWORD dwSSPIFlags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY |
+    DWORD dwSSPIFlags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | 
                         ISC_RET_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM |
-                        ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_EXTENDED_ERROR;
-    SECURITY_STATUS scRet = SEC_I_CONTINUE_NEEDED;
+                        ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_USE_SUPPLIED_CREDS |
+                        ISC_REQ_EXTENDED_ERROR;
+    SECURITY_STATUS scRet;
 
     outBufferDesc.ulVersion = SECBUFFER_VERSION;
     outBufferDesc.cBuffers = 1;
@@ -66,25 +57,23 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
     outBuffer[0].BufferType = SECBUFFER_TOKEN;
     outBuffer[0].cbBuffer = 0;
 
-    LOG_DEBUG("Starting handshake for %s", szHostName);
     scRet = pSSPI->InitializeSecurityContextA(phCreds, NULL, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, NULL, 0, phContext, &outBufferDesc, &dwSSPIFlags, NULL);
-    
     if (scRet != SEC_I_CONTINUE_NEEDED) {
-        log_sspi_error("Initial InitializeSecurityContext", scRet);
+        log_sspi_error("InitializeSecurityContext (Initial)", scRet);
         return scRet;
     }
 
     if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
-        log_hex("Sending ClientHello", outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
         send_all(s, outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
         pSSPI->FreeContextBuffer(outBuffer[0].pvBuffer);
     }
 
-    char readBuf[32768];
+    char readBuf[16384];
     int readOffset = 0;
     BOOL bDone = FALSE;
 
     while (!bDone) {
+        // Read data if we don't have any or if the last call needed more
         if (readOffset == 0 || scRet == SEC_E_INCOMPLETE_MESSAGE) {
             int n = recv(s, readBuf + readOffset, sizeof(readBuf) - readOffset, 0);
             if (n < 0) {
@@ -95,7 +84,6 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                 LOG_ERROR("Handshake connection closed by peer");
                 return SEC_E_INTERNAL_ERROR;
             }
-            LOG_DEBUG("Handshake received %d bytes", n);
             readOffset += n;
         }
 
@@ -113,26 +101,22 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
         outBuffer[0].cbBuffer = 0;
 
         scRet = pSSPI->InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
-        LOG_DEBUG("InitializeSecurityContext returned 0x%lx", scRet);
 
         if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED || 
             (FAILED(scRet) && (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer))) {
             
             if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
-                log_hex("Sending handshake response", outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
                 send_all(s, outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
                 pSSPI->FreeContextBuffer(outBuffer[0].pvBuffer);
             }
             
             if (FAILED(scRet)) {
-                log_sspi_error("InitializeSecurityContext (loop)", scRet);
+                log_sspi_error("InitializeSecurityContext", scRet);
                 return scRet;
             }
 
             if (scRet == SEC_E_OK) {
-                LOG_INFO("Handshake completed successfully");
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
-                    LOG_DEBUG("Extra data after handshake: %d bytes", inBuffer[1].cbBuffer);
                     *extra_data = malloc(inBuffer[1].cbBuffer);
                     if (*extra_data) {
                         memcpy(*extra_data, inBuffer[1].pvBuffer, inBuffer[1].cbBuffer);
@@ -145,21 +129,18 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
                     memmove(readBuf, inBuffer[1].pvBuffer, inBuffer[1].cbBuffer);
                     readOffset = inBuffer[1].cbBuffer;
-                    LOG_DEBUG("Processing extra data (%d bytes)", readOffset);
                 } else {
                     readOffset = 0;
                 }
             }
         } else if (scRet == SEC_E_INCOMPLETE_MESSAGE) {
-            LOG_DEBUG("Incomplete message, reading more...");
+            // Need more data, loop will call recv
             continue;
         } else {
-            log_sspi_error("InitializeSecurityContext (fatal)", scRet);
-            if (readOffset > 0) log_hex("Fatal packet start", readBuf, readOffset);
+            log_sspi_error("InitializeSecurityContext (Final)", scRet);
             return scRet;
         }
     }
-    return SEC_E_OK;
 }
 
 tls_connection_t* tls_connect(const char *host, int port) {
@@ -167,7 +148,7 @@ tls_connection_t* tls_connect(const char *host, int port) {
     if (!conn) return NULL;
 
     conn->pSSPI = InitSecurityInterfaceA();
-    if (!conn->pSSPI) { LOG_ERROR("InitSecurityInterfaceA failed"); free(conn); return NULL; }
+    if (!conn->pSSPI) { free(conn); return NULL; }
 
     char port_str[16];
     sprintf(port_str, "%d", port);
@@ -177,34 +158,36 @@ tls_connection_t* tls_connect(const char *host, int port) {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    if (getaddrinfo(host, port_str, &hints, &result) != 0) { 
-        LOG_ERROR("getaddrinfo failed for %s", host);
-        free(conn); return NULL; 
-    }
+    if (getaddrinfo(host, port_str, &hints, &result) != 0) { free(conn); return NULL; }
     conn->socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (conn->socket == INVALID_SOCKET) { LOG_ERROR("socket creation failed"); freeaddrinfo(result); free(conn); return NULL; }
+    if (conn->socket == INVALID_SOCKET) { freeaddrinfo(result); free(conn); return NULL; }
     if (connect(conn->socket, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR) { 
-        LOG_ERROR("connect failed to %s:%d", host, port);
         closesocket(conn->socket); freeaddrinfo(result); free(conn); return NULL; 
     }
     freeaddrinfo(result);
 
     SCHANNEL_CRED schannelCred = {0};
     schannelCred.dwVersion = SCHANNEL_CRED_VERSION;
+    // Explicitly enable TLS 1.0, 1.1 and 1.2
     schannelCred.grbitEnabledProtocols = SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT;
-    schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS |
+    
+    // SCH_CRED_NO_DEFAULT_CREDS: Don't use current user's certs
+    // SCH_CRED_MANUAL_CRED_VALIDATION: We'll check certs later if needed, avoids some early fails
+    schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | 
                            SCH_CRED_MANUAL_CRED_VALIDATION |
                            SCH_CRED_IGNORE_NO_REVOCATION_CHECK |
                            SCH_CRED_IGNORE_REVOCATION_OFFLINE;
 
-    SECURITY_STATUS status = conn->pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &conn->hCreds, NULL);
-    if (status != SEC_E_OK) {
-        log_sspi_error("AcquireCredentialsHandle", status);
+    if (conn->pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &conn->hCreds, NULL) != SEC_E_OK) {
+        LOG_ERROR("AcquireCredentialsHandle failed");
         closesocket(conn->socket); free(conn); return NULL;
     }
 
+    // On Windows XP, the 3rd parameter to InitializeSecurityContext (szHostName) 
+    // is used for SNI if the system has the right updates.
     SECURITY_STATUS sc = PerformHandshake(conn->socket, conn->pSSPI, &conn->hCreds, host, &conn->hContext, &conn->extra_data, &conn->extra_data_len);
     if (sc != SEC_E_OK) {
+        LOG_ERROR("PerformHandshake failed: 0x%lx", sc);
         conn->pSSPI->FreeCredentialsHandle(&conn->hCreds);
         closesocket(conn->socket); free(conn); return NULL;
     }
@@ -214,8 +197,7 @@ tls_connection_t* tls_connect(const char *host, int port) {
 
 int tls_send(tls_connection_t *conn, const char *buf, int len) {
     SecPkgContext_StreamSizes sizes;
-    SECURITY_STATUS sc = conn->pSSPI->QueryContextAttributesA(&conn->hContext, SECPKG_ATTR_STREAM_SIZES, &sizes);
-    if (sc != SEC_E_OK) return -1;
+    conn->pSSPI->QueryContextAttributesA(&conn->hContext, SECPKG_ATTR_STREAM_SIZES, &sizes);
 
     DWORD cbMsg = (DWORD)len;
     DWORD cbBuffer = sizes.cbHeader + cbMsg + sizes.cbTrailer;
@@ -240,16 +222,14 @@ int tls_send(tls_connection_t *conn, const char *buf, int len) {
     msgBuffers[2].BufferType = SECBUFFER_STREAM_TRAILER;
     msgBuffers[3].BufferType = SECBUFFER_EMPTY;
 
-    sc = conn->pSSPI->EncryptMessage(&conn->hContext, 0, &msgDesc, 0);
-    if (FAILED(sc)) { free(pBuffer); return -1; }
-    
+    conn->pSSPI->EncryptMessage(&conn->hContext, 0, &msgDesc, 0);
     int sent = send_all(conn->socket, pBuffer, msgBuffers[0].cbBuffer + msgBuffers[1].cbBuffer + msgBuffers[2].cbBuffer);
     free(pBuffer);
     return sent > 0 ? len : -1;
 }
 
 int tls_recv(tls_connection_t *conn, char *buf, int max_len) {
-    char* recvBuf = malloc(65536);
+    char* recvBuf = malloc(32768);
     int recvLen = 0;
     int decrypted_len = 0;
     SECURITY_STATUS sc = SEC_E_OK;
@@ -264,7 +244,7 @@ int tls_recv(tls_connection_t *conn, char *buf, int max_len) {
 
     while (TRUE) {
         if (recvLen == 0 || sc == SEC_E_INCOMPLETE_MESSAGE) {
-            int n = recv(conn->socket, recvBuf + recvLen, 65536 - recvLen, 0);
+            int n = recv(conn->socket, recvBuf + recvLen, 32768 - recvLen, 0);
             if (n < 0) { free(recvBuf); return -1; }
             if (n == 0) break;
             recvLen += n;
