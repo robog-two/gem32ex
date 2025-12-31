@@ -327,6 +327,7 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
                 GpGraphics *graphics = NULL;
                 GpStatus graphics_status = fn_GdipCreateFromHDC(hdc, &graphics);
                 if (graphics_status == 0 && graphics) {
+                    // Draw at the requested position and size (w, h already include padding/border from layout)
                     GpStatus draw_status = fn_GdipDrawImageRectI(graphics, (GpImage*)bitmap, x, y, w, h);
                     if (draw_status == 0) {
                         drawn = 1;
@@ -341,12 +342,7 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
             } else if (status != 0) {
                 if (is_png_file) {
                     // PNG codec issue - likely GDI+ version or installation problem
-                    // GdiplusStatus codes: 1=GenericError, 2=InvalidParameter, 4=NotImplemented, etc.
-                    LOG_WARN("GDI+ PNG codec failed (status %d). This is usually caused by:", (int)status);
-                    LOG_WARN("  1) GDI+ not installed or outdated (requires update KB976519)");
-                    LOG_WARN("  2) PNG with unusual compression or color profile");
-                    LOG_WARN("  3) Interlaced PNG format not supported");
-                    LOG_WARN("  Workaround: Update gdiplus.dll or convert PNG to JPG/BMP");
+                    LOG_WARN("GDI+ PNG codec failed (status %d). GDI+ may not be installed or updated.", (int)status);
                 } else {
                     LOG_DEBUG("GDI+ failed to load image (status %d), trying OleLoadPicture", (int)status);
                 }
