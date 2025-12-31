@@ -169,32 +169,50 @@ static void set_color_from_style(HDC hdc, style_t *style) {
 void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, int h) {
     if (!data || size == 0) return;
 
+    // Validate image size is reasonable (some sanity check)
+    if (size > 10 * 1024 * 1024) {
+        LOG_WARN("Image data too large: %lu bytes (max 10MB)", (unsigned long)size);
+        return;
+    }
+
     HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
-    if (!hGlobal) return;
+    if (!hGlobal) {
+        LOG_WARN("GlobalAlloc failed for image data size %lu", (unsigned long)size);
+        return;
+    }
 
     void *ptr = GlobalLock(hGlobal);
+    if (!ptr) {
+        GlobalFree(hGlobal);
+        LOG_WARN("GlobalLock failed for image data");
+        return;
+    }
+
     memcpy(ptr, data, size);
     GlobalUnlock(hGlobal);
 
     IStream *pStream = NULL;
     if (CreateStreamOnHGlobal(hGlobal, TRUE, &pStream) == S_OK) {
         int drawn = 0;
-        
+
         // Try GDI+ first (supports PNG)
         if (g_hGdiPlus && fn_GdipCreateBitmapFromStream && fn_GdipCreateFromHDC) {
             GpBitmap *bitmap = NULL;
-            if (fn_GdipCreateBitmapFromStream(pStream, &bitmap) == 0 && bitmap) {
+            GpStatus status = fn_GdipCreateBitmapFromStream(pStream, &bitmap);
+            if (status == 0 && bitmap) {
                 GpGraphics *graphics = NULL;
                 if (fn_GdipCreateFromHDC(hdc, &graphics) == 0 && graphics) {
                     if (fn_GdipDrawImageRectI(graphics, (GpImage*)bitmap, x, y, w, h) == 0) {
                         drawn = 1;
+                        LOG_DEBUG("Image rendered with GDI+ (%lu bytes)", (unsigned long)size);
                     }
                     fn_GdipDeleteGraphics(graphics);
                 }
                 fn_GdipDisposeImage((GpImage*)bitmap);
+            } else if (status != 0) {
+                LOG_DEBUG("GDI+ failed to load image (status %d), trying OleLoadPicture", (int)status);
             }
-            // If GDI+ failed (e.g. invalid format it can't handle), we fall back to OleLoadPicture
-            // Reset stream position for fallback
+            // If GDI+ failed, reset stream position for fallback
             LARGE_INTEGER li = {0};
             pStream->lpVtbl->Seek(pStream, li, STREAM_SEEK_SET, NULL);
         }
@@ -202,21 +220,29 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
         if (!drawn) {
             // Fallback to OLE (BMP, JPG, GIF, ICO)
             IPicture *pPicture = NULL;
-            if (OleLoadPicture(pStream, size, FALSE, &IID_IPicture, (void**)&pPicture) == S_OK) {
+            HRESULT hr = OleLoadPicture(pStream, size, FALSE, &IID_IPicture, (void**)&pPicture);
+            if (hr == S_OK && pPicture) {
                 long hmWidth, hmHeight;
                 pPicture->lpVtbl->get_Width(pPicture, &hmWidth);
                 pPicture->lpVtbl->get_Height(pPicture, &hmHeight);
 
-                pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
+                HRESULT render_hr = pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
+                if (render_hr == S_OK) {
+                    drawn = 1;
+                    LOG_DEBUG("Image rendered with OleLoadPicture (%lu bytes)", (unsigned long)size);
+                } else {
+                    LOG_WARN("OleLoadPicture Render failed (hr=0x%lx)", (unsigned long)render_hr);
+                }
                 pPicture->lpVtbl->Release(pPicture);
             } else {
-                 LOG_ERROR("Image load failed (GDI+ and OleLoadPicture) for size %lu", (unsigned long)size);
+                LOG_WARN("Image load failed (GDI+ and OleLoadPicture) for size %lu (hr=0x%lx)", (unsigned long)size, (unsigned long)hr);
             }
         }
-        
+
         pStream->lpVtbl->Release(pStream);
     } else {
-        LOG_ERROR("CreateStreamOnHGlobal failed for image data");
+        LOG_ERROR("CreateStreamOnHGlobal failed for image data (size %lu)", (unsigned long)size);
+        GlobalFree(hGlobal);
     }
 }
 
