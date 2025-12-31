@@ -36,35 +36,43 @@ static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h)
 }
 
 void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
-    if (!box) return;
+    if (!box || (box->node && box->node->style && box->node->style->display == DISPLAY_NONE)) return;
 
-    int x = box->dimensions.x + offset_x;
-    int y = box->dimensions.y + offset_y;
-    int w = box->dimensions.width;
-    int h = box->dimensions.height;
+    int x = box->fragment.border_box.x + offset_x;
+    int y = box->fragment.border_box.y + offset_y;
+    int w = box->fragment.border_box.width;
+    int h = box->fragment.border_box.height;
 
     if (box->node->type == DOM_NODE_ELEMENT) {
         if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
             render_image(hdc, box, x, y, w, h);
         } else {
-             // Simple visual debug: Draw border for all blocks to see layout
-            HBRUSH hBrush = GetStockObject(NULL_BRUSH);
-            HBRUSH oldBrush = SelectObject(hdc, hBrush);
-            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(220, 220, 220));
-            HPEN oldPen = SelectObject(hdc, hPen);
+            // Background color if set
+            if (box->node->style->bg_color != 0xFFFFFF) {
+                HBRUSH hBrush = CreateSolidBrush(RGB((box->node->style->bg_color >> 16) & 0xFF, (box->node->style->bg_color >> 8) & 0xFF, box->node->style->bg_color & 0xFF));
+                RECT r = {x, y, x + w, y + h};
+                FillRect(hdc, &r, hBrush);
+                DeleteObject(hBrush);
+            }
             
-            Rectangle(hdc, x, y, x + w, y + h);
-            
-            SelectObject(hdc, oldPen);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(hPen);
+            // Border if set
+            if (box->node->style->border_width > 0) {
+                HPEN hPen = CreatePen(PS_SOLID, box->node->style->border_width, RGB(0, 0, 0));
+                HPEN oldPen = SelectObject(hdc, hPen);
+                HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                
+                Rectangle(hdc, x, y, x + w, y + h);
+                
+                SelectObject(hdc, oldBrush);
+                SelectObject(hdc, oldPen);
+                DeleteObject(hPen);
+            }
         }
     } else if (box->node->type == DOM_NODE_TEXT && box->node->content) {
         set_color_from_style(hdc, box->node->style);
         SetBkMode(hdc, TRANSPARENT);
         
         RECT r = {x, y, x + w, y + h};
-        // DT_WORDBREAK is essential for wrapping
         DrawText(hdc, box->node->content, -1, &r, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
     }
 

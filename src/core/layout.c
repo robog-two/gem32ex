@@ -24,206 +24,230 @@ void layout_free(layout_box_t *box) {
 
 static int is_block(node_t *node) {
     if (!node || !node->style) return 0;
-    return (node->style->display == DISPLAY_BLOCK || 
-            node->style->display == DISPLAY_TABLE || 
-            node->style->display == DISPLAY_TABLE_ROW ||
-            node->style->display == DISPLAY_TABLE_CELL);
+    display_t d = node->style->display;
+    return (d == DISPLAY_BLOCK || d == DISPLAY_TABLE || d == DISPLAY_TABLE_ROW || d == DISPLAY_TABLE_CELL);
 }
 
-static int get_inline_width(node_t *node) {
+static int is_inline(node_t *node) {
+    if (!node || !node->style) return 1;
+    return node->style->display == DISPLAY_INLINE;
+}
+
+static int get_intrinsic_width(layout_box_t *box) {
+    node_t *node = box->node;
     if (node->type == DOM_NODE_TEXT && node->content) {
+        // Mock: 8px per character. Real browser would measure glyphs.
         return strlen(node->content) * 8; 
     }
     if (node->type == DOM_NODE_ELEMENT && node->tag_name && strcasecmp(node->tag_name, "img") == 0) {
-        return 100; 
+        if (node->style->width > 0) return node->style->width;
+        return 100; // Default placeholder
     }
     return 0;
 }
 
-// Inline Line Buffer
-#define MAX_LINE_ITEMS 128
-typedef struct {
-    layout_box_t *items[MAX_LINE_ITEMS];
-    int count;
-    int current_width;
-    int max_height;
-} line_buffer_t;
+// --- Inline Layout Algorithm (Fragment-based Line Buffering) ---
 
-static void flush_line(line_buffer_t *line, int x_start, int y, int total_width, text_align_t align) {
+#define MAX_LINE_FRAGMENTS 256
+typedef struct {
+    layout_box_t *items[MAX_LINE_FRAGMENTS];
+    int count;
+    int width;
+    int height;
+    int baseline;
+} line_info_t;
+
+static void flush_line(line_info_t *line, int x_offset, int *y_cursor, int available_width, text_align_t align) {
     if (line->count == 0) return;
 
-    int free_space = total_width - line->current_width;
-    int start_offset = 0;
+    int free_space = available_width - line->width;
+    int x_start = x_offset;
+    if (align == TEXT_ALIGN_CENTER) x_start += free_space / 2;
+    else if (align == TEXT_ALIGN_RIGHT) x_start += free_space;
 
-    if (align == TEXT_ALIGN_CENTER) start_offset = free_space / 2;
-    else if (align == TEXT_ALIGN_RIGHT) start_offset = free_space;
-    
-    if (start_offset < 0) start_offset = 0; // Don't shift left out of box
+    if (x_start < x_offset) x_start = x_offset;
 
-    int current_x = x_start + start_offset;
-    
     for (int i = 0; i < line->count; i++) {
-        layout_box_t *box = line->items[i];
-        box->dimensions.x = current_x;
-        box->dimensions.y = y + (line->max_height - box->dimensions.height); // Bottom align roughly
-        // Better: Top align
-        box->dimensions.y = y; 
+        layout_box_t *child = line->items[i];
+        child->fragment.border_box.x = x_start;
+        // Simple vertical alignment: top
+        child->fragment.border_box.y = *y_cursor; 
         
-        current_x += box->dimensions.width;
+        x_start += child->fragment.border_box.width;
     }
 
-    // Reset line
+    *y_cursor += line->height;
     line->count = 0;
-    line->current_width = 0;
-    line->max_height = 0;
+    line->width = 0;
+    line->height = 0;
 }
 
-rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_width);
-
-void layout_compute_internal_void(layout_box_t *box, int x, int y, int available_width) {
-    layout_compute_internal(box, x, y, available_width);
-}
-
-rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_width) {
-    rect_t used_dim = {x, y, 0, 0};
-    if (!box || !box->node || !box->node->style) return used_dim;
-    if (box->node->style->display == DISPLAY_NONE) return used_dim;
-
-    style_t *style = box->node->style;
+static void layout_inline_children(layout_box_t *box, constraint_space_t space, int *y_cursor) {
+    line_info_t line = {0};
+    int x_start = box->fragment.content_box.x;
+    int available_width = box->fragment.content_box.width;
     
-    int mt = style->margin_top;
-    int mb = style->margin_bottom;
-    int ml = style->margin_left;
-    int mr = style->margin_right;
-    int pt = style->padding_top;
-    int pb = style->padding_bottom;
-    int pl = style->padding_left;
-    int pr = style->padding_right;
-    int bw = style->border_width;
-
-    box->dimensions.x = x + ml;
-    box->dimensions.y = y + mt;
-
-    int content_available_width = available_width - (ml + mr + pl + pr + (bw * 2));
-    if (content_available_width < 0) content_available_width = 0;
-
-    if (is_block(box->node)) {
-        if (style->width > 0) box->dimensions.width = style->width;
-        else box->dimensions.width = content_available_width;
-    } else {
-        box->dimensions.width = get_inline_width(box->node);
-    }
-
-    int child_x_start = box->dimensions.x + bw + pl;
-    int cursor_y = box->dimensions.y + bw + pt;
-    int max_child_w = box->dimensions.width - (pl + pr + bw*2); // Inner content width of box
-    if (max_child_w < 0) max_child_w = 0;
-
-    // Line buffering for inline flow
-    line_buffer_t line = {0};
-
-    // Table Handling
-    int cell_count = 0;
-    if (style->display == DISPLAY_TABLE_ROW) {
-        layout_box_t *c = box->first_child;
-        while (c) { if (c->node->style->display == DISPLAY_TABLE_CELL) cell_count++; c = c->next_sibling; }
-    }
-
     layout_box_t *child = box->first_child;
     while (child) {
-        if (style->display == DISPLAY_TABLE_ROW && child->node->style->display == DISPLAY_TABLE_CELL) {
-            // ... Table cell logic (omitted for brevity, assume block-like grid) ...
-            // Re-implement basic table grid
-             int cell_w = box->dimensions.width / (cell_count > 0 ? cell_count : 1);
-             child->node->style->width = cell_w; // Force style width
-             layout_compute_internal_void(child, child_x_start, cursor_y, cell_w); 
-             child->dimensions.width = cell_w; // Force dim width
-             child_x_start += cell_w; // Move cursor right directly
-             
-             if (child->dimensions.height > line.max_height) line.max_height = child->dimensions.height;
-        } 
-        else if (is_block(child->node)) {
-            // Flush any inline content first
-            if (line.count > 0) {
-                int lh = line.max_height;
-                flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-                cursor_y += lh;
-            }
-
-            // Layout Block
-            rect_t res = layout_compute_internal(child, child_x_start, cursor_y, max_child_w);
-            cursor_y += res.height + child->node->style->margin_top + child->node->style->margin_bottom;
-        } 
-        else {
-            // Inline
-            // 1. Calculate size tentatively (pass full width to let it size itself)
-            // Note: Inline containers need to know available space to wrap their own children?
-            // For now, simplify: Measure intrinsic size
-            
-            rect_t res = layout_compute_internal(child, 0, 0, max_child_w); 
-            // Pos is 0,0 because we don't know it yet. We just want dims.
-            
-            int child_w = res.width + child->node->style->margin_left + child->node->style->margin_right;
-            int child_h = res.height + child->node->style->margin_top + child->node->style->margin_bottom;
-
-            // Check fit
-            if (line.current_width + child_w > max_child_w && line.count > 0) {
-                // Wrap
-                int lh = line.max_height;
-                flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-                cursor_y += lh; 
-                // New line starts with 0 height
-            }
-
-            // Add to line
-            if (line.count < MAX_LINE_ITEMS) {
-                line.items[line.count++] = child;
-                line.current_width += child_w;
-                if (child_h > line.max_height) line.max_height = child_h;
-            } else {
-                // Buffer full, force flush (rare edge case)
-                int lh = line.max_height;
-                flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-                cursor_y += lh;
-                
-                // Add current
-                line.items[line.count++] = child;
-                line.current_width += child_w;
-                line.max_height = child_h;
-            }
-            
-            // If inline container grew (e.g. bold text), propagate? 
-            // We used recursive layout call so 'child' dimensions are set. 
-            // flush_line will just move them.
+        if (child->node->style->display == DISPLAY_NONE) {
+            child = child->next_sibling;
+            continue;
         }
+
+        // 1. Measure child
+        // Inline children ignore available_width for their *own* preferred width
+        // but are constrained by the line buffer.
+        constraint_space_t child_space = space;
+        child_space.available_width = available_width;
+        child_space.is_fixed_width = 0;
+
+        layout_compute(child, child_space);
+
+        int child_w = child->fragment.border_box.width;
+        int child_h = child->fragment.border_box.height;
+
+        // 2. Fit in line
+        if (line.width + child_w > available_width && line.count > 0) {
+            flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+        }
+
+        if (line.count < MAX_LINE_FRAGMENTS) {
+            line.items[line.count++] = child;
+            line.width += child_w;
+            if (child_h > line.height) line.height = child_h;
+        }
+
         child = child->next_sibling;
     }
 
-    // Flush remaining
-    if (line.count > 0) {
-        int lh = line.max_height;
-        flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-        cursor_y += lh;
-    }
-
-    // Calc height
-    int content_height = cursor_y - (box->dimensions.y + bw + pt);
-    if (style->height > 0) box->dimensions.height = style->height;
-    else {
-        box->dimensions.height = content_height;
-         if (box->dimensions.height == 0 && box->node->type == DOM_NODE_TEXT) box->dimensions.height = 20;
-    }
-    
-    // Adjust height for Table Row
-    if (style->display == DISPLAY_TABLE_ROW) box->dimensions.height = line.max_height > 0 ? line.max_height : 20;
-
-    used_dim.width = box->dimensions.width + ml + mr + pl + pr + (bw*2);
-    used_dim.height = box->dimensions.height + mt + mb + pt + pb + (bw*2);
-    return used_dim;
+    flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
 }
 
-void layout_compute(layout_box_t *box, int x, int y, int available_width) {
-    layout_compute_internal(box, x, y, available_width);
+// --- Block Layout Algorithm ---
+
+void layout_compute(layout_box_t *box, constraint_space_t space) {
+    if (!box || !box->node || !box->node->style) return;
+    style_t *style = box->node->style;
+    if (style->display == DISPLAY_NONE) return;
+
+    box->last_space = space;
+
+    // 1. Resolve Box Model
+    int bw = style->border_width;
+    int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
+    int ml = style->margin_left, mr = style->margin_right, mt = style->margin_top, mb = style->margin_bottom;
+
+    // Position (relative to parent content box, set by parent algorithm)
+    // We expect box->fragment.border_box.x/y to be hinted by parent if it's block
+    // but usually parent just gives available space and we return height.
+
+    // Calculate width
+    if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
+        style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
+        if (style->width > 0) box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
+        else box->fragment.border_box.width = space.available_width;
+    } else {
+        // Inline-level
+        box->fragment.border_box.width = get_intrinsic_width(box);
+    }
+
+    // Content area
+    box->fragment.content_box.width = box->fragment.border_box.width - (bw * 2 + pl + pr);
+    if (box->fragment.content_box.width < 0) box->fragment.content_box.width = 0;
+    
+    // Y-cursor for children
+    int child_y = box->fragment.border_box.y + bw + pt;
+    box->fragment.content_box.x = box->fragment.border_box.x + bw + pl;
+    box->fragment.content_box.y = child_y;
+
+    // 2. Layout Children
+    if (style->display == DISPLAY_TABLE_ROW) {
+        // Table row layout: Distribute width among cells
+        int cell_count = 0;
+        layout_box_t *c = box->first_child;
+        while (c) { if (c->node->style->display == DISPLAY_TABLE_CELL) cell_count++; c = c->next_sibling; }
+        
+        if (cell_count > 0) {
+            int cell_w = box->fragment.content_box.width / cell_count;
+            int x_offset = box->fragment.content_box.x;
+            int max_h = 0;
+            layout_box_t *cell = box->first_child;
+            while (cell) {
+                if (cell->node->style->display == DISPLAY_TABLE_CELL) {
+                    constraint_space_t cell_space = space;
+                    cell_space.available_width = cell_w;
+                    cell_space.is_fixed_width = 1;
+                    cell->fragment.border_box.x = x_offset;
+                    cell->fragment.border_box.y = box->fragment.content_box.y;
+                    layout_compute(cell, cell_space);
+                    if (cell->fragment.border_box.height > max_h) max_h = cell->fragment.border_box.height;
+                    x_offset += cell_w;
+                }
+                cell = cell->next_sibling;
+            }
+            child_y += max_h;
+        }
+    } else {
+        int has_block_children = 0;
+        layout_box_t *c = box->first_child;
+        while (c) { if (is_block(c->node)) { has_block_children = 1; break; } c = c->next_sibling; }
+
+        if (has_block_children) {
+            // Block flow
+            layout_box_t *child = box->first_child;
+            int prev_margin_bottom = 0;
+
+            while (child) {
+                if (child->node->style->display == DISPLAY_NONE) {
+                    child = child->next_sibling;
+                    continue;
+                }
+
+                int collapse = 0;
+                if (is_block(child->node)) {
+                    int cur_mt = child->node->style->margin_top;
+                    collapse = (cur_mt > prev_margin_bottom) ? cur_mt : prev_margin_bottom;
+                    if (child == box->first_child) collapse = cur_mt;
+                    child_y += collapse;
+                }
+
+                constraint_space_t child_space = space;
+                child_space.available_width = box->fragment.content_box.width;
+                if (is_block(child->node)) {
+                    child->fragment.border_box.x = box->fragment.content_box.x + child->node->style->margin_left;
+                    child_space.available_width -= (child->node->style->margin_left + child->node->style->margin_right);
+                } else {
+                    child->fragment.border_box.x = box->fragment.content_box.x;
+                }
+                child->fragment.border_box.y = child_y;
+
+                layout_compute(child, child_space);
+
+                child_y += child->fragment.border_box.height;
+                if (is_block(child->node)) {
+                    prev_margin_bottom = child->node->style->margin_bottom;
+                }
+                child = child->next_sibling;
+            }
+            child_y += prev_margin_bottom;
+        } else {
+            // Inline flow
+            layout_inline_children(box, space, &child_y);
+        }
+    }
+
+    // 3. Resolve Height
+    int content_height = child_y - (box->fragment.border_box.y + bw + pt);
+    if (style->height > 0) box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
+    else {
+        box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
+        // Text node minimum height
+        if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) {
+             box->fragment.border_box.height = 16;
+        }
+    }
+    
+    box->fragment.content_box.height = content_height;
 }
 
 layout_box_t* layout_create_tree(node_t *root, int container_width) {
@@ -245,8 +269,12 @@ layout_box_t* layout_create_tree(node_t *root, int container_width) {
         child_node = child_node->next_sibling;
     }
 
+    // Top-level layout trigger
     if (root->tag_name && strcmp(root->tag_name, "root") == 0) {
-        layout_compute(box, 0, 0, container_width);
+        constraint_space_t space = {container_width, 0, 1, 0};
+        box->fragment.border_box.x = 0;
+        box->fragment.border_box.y = 0;
+        layout_compute(box, space);
     }
 
     return box;

@@ -6,8 +6,8 @@ void print_layout(layout_box_t *box, int depth) {
     for (int i = 0; i < depth; i++) printf("  ");
     printf("<%s> @ (%d, %d) size %dx%d\n", 
            box->node->tag_name ? box->node->tag_name : "TEXT",
-           box->dimensions.x, box->dimensions.y,
-           box->dimensions.width, box->dimensions.height);
+           box->fragment.border_box.x, box->fragment.border_box.y,
+           box->fragment.border_box.width, box->fragment.border_box.height);
 
     layout_box_t *child = box->first_child;
     while (child) {
