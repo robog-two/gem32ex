@@ -183,8 +183,15 @@ void style_compute(node_t *node) {
             style->border_width = 1; // Basic border
             style->padding_top = style->padding_bottom = 2;
             style->padding_left = style->padding_right = 4;
-            // style->bg_color = 0xEEEEEE; // Light gray (requires setting in style_init or here)
-            // But style_init sets bg to white. We can override if needed, but white is fine for inputs.
+            
+            // Modern defaults for size if not specified
+            if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "select") == 0) {
+                 style->width = 150; // Standard input width approx
+                 style->height = 20;
+            } else if (strcasecmp(node->tag_name, "button") == 0) {
+                 style->height = 24;
+            }
+
             if (strcasecmp(node->tag_name, "button") == 0) {
                  style->bg_color = 0xDDDDDD; 
                  style->text_align = TEXT_ALIGN_CENTER;
