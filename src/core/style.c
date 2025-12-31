@@ -340,6 +340,7 @@ void style_compute(node_t *node) {
         } else if (strcasecmp(node->tag_name, "img") == 0) {
             style->display = DISPLAY_INLINE;
         } else if (strcasecmp(node->tag_name, "script") == 0 ||
+                   strcasecmp(node->tag_name, "noscript") == 0 ||
                    strcasecmp(node->tag_name, "style") == 0 ||
                    strcasecmp(node->tag_name, "link") == 0 ||
                    strcasecmp(node->tag_name, "meta") == 0 ||

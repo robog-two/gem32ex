@@ -327,9 +327,20 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
 
     // Pass the current box's absolute position as the offset for children
     // This assumes children's coordinates are relative to this box.
-    layout_box_t *child = box->first_child;
-    while (child) {
-        render_tree(hdc, child, x, y);
-        child = child->next_sibling;
+    // Do not render children of replaced elements (img, iframe)
+    int is_replaced = 0;
+    if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name) {
+        if (strcasecmp(box->node->tag_name, "img") == 0 || 
+            strcasecmp(box->node->tag_name, "iframe") == 0) {
+            is_replaced = 1;
+        }
+    }
+
+    if (!is_replaced) {
+        layout_box_t *child = box->first_child;
+        while (child) {
+            render_tree(hdc, child, x, y);
+            child = child->next_sibling;
+        }
     }
 }

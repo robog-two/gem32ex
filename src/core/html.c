@@ -29,8 +29,15 @@ node_t* html_parse(const char *html) {
         if (*p == '<') {
             p++;
             if (*p == '!') { // Comment or DOCTYPE
-                while (*p && *p != '>') p++;
-                if (*p) p++;
+                if (strncmp(p, "!--", 3) == 0) {
+                    p += 3;
+                    const char *end = strstr(p, "-->");
+                    if (end) p = end + 3;
+                    else while (*p) p++;
+                } else {
+                    while (*p && *p != '>') p++;
+                    if (*p) p++;
+                }
                 continue;
             }
 
