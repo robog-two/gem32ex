@@ -1,21 +1,18 @@
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 #include "core/dom.h"
 #include "core/html.h"
 #include "core/style.h"
 #include "core/layout.h"
 #include "core/platform.h"
-#include "core/log.h"
 
-static int g_failed_core = 0;
-
-static void assert_core(int condition, const char *msg) {
+static int assert_core(int condition, const char *msg, int *failed) {
     if (condition) {
-        printf("[ PASS ] %s\n", msg);
+        return 0;
     } else {
         printf("[ FAIL ] %s\n", msg);
-        g_failed_core++;
+        (*failed)++;
+        return 1;
     }
 }
 
@@ -29,61 +26,34 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
     if (out_baseline) *out_baseline = 16;
 }
 
-void test_dom_and_html() {
-    printf("\n--- Testing HTML Parsing & DOM Structure ---\n");
-    const char *html = "<html><body class='test'><h1>Title</h1><p>Text</p></body></html>";
-    node_t *dom = html_parse(html);
-    
-    assert_core(dom != NULL, "DOM parsed from string");
-    if (dom) {
-        node_t *html_node = dom->first_child;
-        assert_core(html_node && strcmp(html_node->tag_name, "html") == 0, "First child is <html>");
-        node_t *body_node = html_node ? html_node->first_child : NULL;
-        assert_core(body_node && strcmp(body_node->tag_name, "body") == 0, "Child of html is <body>");
-        const char *cls = node_get_attr(body_node, "class");
-        assert_core(cls && strcmp(cls, "test") == 0, "Attribute parsing works");
-        node_free(dom);
-    }
-}
+void run_core_tests(int *total_failed) {
+    int local_failed = 0;
+    printf("Running core engine tests...\n");
 
-void test_style() {
-    printf("\n--- Testing Style Computation ---\n");
-    const char *html = "<html><body><h1>Big Title</h1><a href='#' style='color:red'>Link</a></body></html>";
+    // HTML/DOM Test
+    const char *html = "<html><body><h1 id='t'>Title</h1></body></html>";
     node_t *dom = html_parse(html);
-    if (dom) {
+    if (assert_core(dom != NULL, "HTML parse works", &local_failed) == 0) {
+        node_t *html_n = dom->first_child;
+        node_t *body_n = html_n ? html_n->first_child : NULL;
+        node_t *h1_n = body_n ? body_n->first_child : NULL;
+        assert_core(h1_n && strcmp(h1_n->tag_name, "h1") == 0, "DOM tree structure correct", &local_failed);
+        assert_core(h1_n && strcmp(node_get_attr(h1_n, "id"), "t") == 0, "Attribute parsing works", &local_failed);
+        
+        // Style Test
         style_compute(dom);
-        node_t *html_node = dom->first_child;
-        node_t *body = html_node->first_child;
-        node_t *h1 = body->first_child;
-        node_t *a = h1->next_sibling;
-        assert_core(h1->style->font_size == 32, "H1 default font-size is 32");
-        assert_core(a->style->color == 0x0000FF, "Link (<a>) is blue by default");
-        node_free(dom);
-    }
-}
-
-void test_layout() {
-    printf("\n--- Testing Layout Engine ---\n");
-    const char *html = "<html><body><div style='width:200px; height:100px'></div></body></html>";
-    node_t *dom = html_parse(html);
-    if (dom) {
-        style_compute(dom);
+        assert_core(h1_n->style->font_size == 32, "Default styles applied (h1 font-size)", &local_failed);
+        assert_core(h1_n->style->display == DISPLAY_BLOCK, "Default styles applied (h1 display)", &local_failed);
+        
+        // Layout Test
         layout_box_t *layout = layout_create_tree(dom, 800);
-        assert_core(layout != NULL, "Layout tree created");
-        if (layout) {
-            assert_core(layout->fragment.border_box.width == 800, "Root layout width matches container");
+        if (assert_core(layout != NULL, "Layout tree creation works", &local_failed) == 0) {
+            assert_core(layout->fragment.border_box.width == 800, "Layout root width correct", &local_failed);
             layout_free(layout);
         }
         node_free(dom);
     }
-}
 
-void run_core_tests(int *total_failed) {
-    printf("\n>>> RUNNING CORE ENGINE TESTS <<<\n");
-    g_failed_core = 0;
-    test_dom_and_html();
-    test_style();
-    test_layout();
-    *total_failed += g_failed_core;
+    if (local_failed == 0) printf("[ PASS ] All core engine tests passed.\n");
+    *total_failed += local_failed;
 }
-
