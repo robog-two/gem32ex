@@ -1,6 +1,7 @@
 CC = i686-w64-mingw32-gcc
 CFLAGS = -std=c99 -Wall -Wextra -Isrc -D_WIN32_WINNT=0x0501
-LDFLAGS = -mwindows -lcomctl32 -lgdi32 -lwininet -lws2_32 -lole32 -loleaut32 -luuid -lssl -lcrypto -lws2_32 -lgdi32 -lcrypt32 -static-libgcc
+# Static linking for OpenSSL and runtime libraries for Windows XP compatibility
+LDFLAGS = -static -static-libgcc -mwindows -lcomctl32 -lgdi32 -lwininet -lws2_32 -lole32 -loleaut32 -luuid -lssl -lcrypto -lcrypt32 -lz
 
 CORE_SRC = src/core/dom.c src/core/html.c src/core/style.c src/core/layout.c src/core/log.c
 SRC = src/main.c src/ui/window.c src/ui/history.c src/ui/bookmarks.c src/ui/render.c src/ui/form.c src/network/http.c src/network/gemini.c src/network/loader.c src/network/protocol.c src/network/tls.c $(CORE_SRC)
