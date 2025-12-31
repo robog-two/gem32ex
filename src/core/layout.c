@@ -258,7 +258,8 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     // Debug: log tag name for images
     if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name) {
         if (strcasecmp(box->node->tag_name, "img") == 0) {
-            LOG_DEBUG("Layout_compute: Found IMG tag!");
+            static int img_count = 0;
+            LOG_DEBUG("Layout_compute: Found IMG tag! (IMG #%d)", ++img_count);
         }
     }
 
@@ -277,8 +278,10 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
         // Images get default 100px content width, plus padding and border
         box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
-        LOG_DEBUG("Layout: MATCHED IMG! Set img width to 100 (content) + bw=%d*2 + pl=%d + pr=%d = %d total", bw, pl, pr, box->fragment.border_box.width);
+        static int matched_img = 0;
+        LOG_DEBUG("Layout: MATCHED IMG #%d! Set img width to 100 (content) + bw=%d*2 + pl=%d + pr=%d = %d total", ++matched_img, bw, pl, pr, box->fragment.border_box.width);
         LOG_DEBUG("Layout: Image at y=%d, border_box now: x=%d y=%d w=%d h=%d", box->fragment.border_box.y, box->fragment.border_box.x, box->fragment.border_box.y, box->fragment.border_box.width, box->fragment.border_box.height);
+        LOG_DEBUG("Layout: Image display=%d style->width=%d", style->display, style->width);
     } else {
         // Not a style.width, not BLOCK/TABLE, and not an img tag
         if (box->node->tag_name) {
@@ -289,7 +292,8 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
              if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
         } else {
              box->fragment.border_box.width = 0;
-             LOG_DEBUG("Layout: Setting width=0 for display=%d", style->display);
+             static int zero_width = 0;
+             LOG_DEBUG("Layout: Setting width=0 #%d for display=%d", ++zero_width, style->display);
         }
     }
 
