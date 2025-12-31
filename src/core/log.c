@@ -3,12 +3,22 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+static int g_has_console = 0;
+
 void log_init(void) {
     // Attempt to attach to parent console (if any)
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {
         // Redirect standard streams to the attached console
-        freopen("CONOUT$", "w", stdout);
+        if (freopen("CONOUT$", "w", stdout)) {
+            g_has_console = 1;
+        }
         freopen("CONOUT$", "w", stderr);
+    } else {
+        // Check if we already have a console (e.g. launched from cmd.exe)
+        DWORD mode;
+        if (GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &mode)) {
+            g_has_console = 1;
+        }
     }
 }
 
@@ -29,11 +39,13 @@ void log_msg(log_level_t level, const char* format, ...) {
     va_end(args);
 
     if (len > 0) {
-        // Output to stdout (might be redirected or attached console)
-        printf("[%s] %s\n", level_str, buffer);
-        fflush(stdout);
+        // Output to console if we have one
+        if (g_has_console) {
+            printf("[%s] %s\n", level_str, buffer);
+            fflush(stdout);
+        }
         
-        // Always output to debug stream
+        // Always output to debug stream (visible in DebugView or debugger)
         char debug_buffer[1100];
         _snprintf(debug_buffer, sizeof(debug_buffer), "[%s] %s\n", level_str, buffer);
         OutputDebugString(debug_buffer);

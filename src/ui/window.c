@@ -96,6 +96,24 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     }
 
     LOG_INFO("Processing new content for URL: %s (%zu bytes)", url, res->size);
+
+    // Free previous DOM and Layout
+    if (g_current_layout) {
+        layout_free(g_current_layout);
+        g_current_layout = NULL;
+    }
+    if (g_current_dom) {
+        node_free(g_current_dom);
+        g_current_dom = NULL;
+    }
+
+    strncpy(g_current_url, url, sizeof(g_current_url)-1);
+    
+    // Update Address Bar (ID_EDIT_URL is in the parent window)
+    HWND hMain = GetParent(hContent);
+    SetWindowText(GetDlgItem(hMain, ID_EDIT_URL), g_current_url);
+
+    g_current_dom = html_parse(res->data);
     if (g_current_dom) {
         loader_fetch_resources(g_current_dom, url);
         style_compute(g_current_dom);
