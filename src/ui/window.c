@@ -1,5 +1,6 @@
 #include "window.h"
 #include <commctrl.h>
+#include <wininet.h>
 #include <stdio.h>
 #include "network/http.h"
 #include "core/html.h"
@@ -255,6 +256,25 @@ static void HandleClick(HWND hContent, int x, int y) {
 
     node_t *node = hit->node;
     while (node && node->type == DOM_NODE_TEXT) node = node->parent;
+
+    // Check for anchor tag
+    node_t *anchor = node;
+    while (anchor) {
+        if (anchor->type == DOM_NODE_ELEMENT && anchor->tag_name && strcasecmp(anchor->tag_name, "a") == 0) {
+            const char *href = node_get_attr(anchor, "href");
+            if (href) {
+                char full_url[2048];
+                DWORD len = sizeof(full_url);
+                if (InternetCombineUrl(g_current_url, href, full_url, &len, 0)) {
+                    Navigate(GetParent(hContent), full_url);
+                } else {
+                    Navigate(GetParent(hContent), href);
+                }
+                return;
+            }
+        }
+        anchor = anchor->parent;
+    }
 
     if (node && node->type == DOM_NODE_ELEMENT && node->tag_name) {
         int is_editable = 0;
