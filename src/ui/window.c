@@ -180,7 +180,7 @@ static void FetchFavicon(history_node_t *node) {
 
     if (!InternetCrackUrl(node->url, 0, 0, &urlComp)) return;
 
-    if (urlComp.nScheme == INTERNET_SCHEME_GEMINI) return;
+    if (strncmp(node->url, "gemini://", 9) == 0) return;
 
     char favicon_url[2048];
     snprintf(favicon_url, sizeof(favicon_url), "%s://%s/favicon.ico", 
