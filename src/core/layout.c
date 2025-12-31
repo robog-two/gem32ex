@@ -88,7 +88,7 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
     int available_width = box->fragment.content_box.width;
 
     const char *tag = box->node->tag_name ? box->node->tag_name : "?";
-    if (box->node->tag_name && strcasecmp(tag, "form") == 0) {
+    if (box->node->tag_name && (strcasecmp(tag, "form") == 0 || strcasecmp(tag, "h1") == 0)) {
         LOG_INFO("  <%s> inline layout: available_width=%d, y_cursor=%d", tag, available_width, *y_cursor);
     }
     
@@ -104,21 +104,26 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
         if (child->node->type == DOM_NODE_TEXT && child->node->content) {
             int w, h, baseline;
             platform_measure_text(child->node->content, child->node->style, -1, &w, &h, &baseline);
-            
+
             if (line.width + w > available_width && line.count > 0) {
                 flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
             }
-            
+
             if (w > available_width) {
                 platform_measure_text(child->node->content, child->node->style, available_width, &w, &h, &baseline);
             }
-            
+
             child_w = w; child_h = h;
             child->fragment.border_box.width = w;
             child->fragment.border_box.height = h;
             child->fragment.baseline = baseline;
             child_ascent = baseline;
             child_descent = h - baseline;
+
+            if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
+                LOG_INFO("    <%s> text child: content='%.20s...', size=%dx%d, baseline=%d, font_size=%d",
+                         tag, child->node->content, w, h, baseline, child->node->style->font_size);
+            }
         } else {
             // Recursively layout child
             // Note: child position will be set by flush_line relative to *this* box.
@@ -128,8 +133,14 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
             layout_compute(child, space);
             child_w = child->fragment.border_box.width;
             child_h = child->fragment.border_box.height;
-            child_ascent = child_h; 
+            child_ascent = child_h;
             child_descent = 0;
+
+            if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
+                const char *child_tag = child->node->tag_name ? child->node->tag_name : "?";
+                LOG_INFO("    <%s> inline child <%s>: size=%dx%d, ascent=%d, descent=%d",
+                         tag, child_tag, child_w, child_h, child_ascent, child_descent);
+            }
 
             if (line.width + child_w > available_width && line.count > 0) {
                 flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
@@ -144,7 +155,17 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
         }
         child = child->next_sibling;
     }
+
+    if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
+        LOG_INFO("  <%s> before flush: line height would be %d (ascent=%d, descent=%d)",
+                 tag, line.max_ascent + line.max_descent, line.max_ascent, line.max_descent);
+    }
+
     flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+
+    if (box->node->tag_name && strcasecmp(tag, "h1") == 0) {
+        LOG_INFO("  <%s> after flush: y_cursor=%d", tag, *y_cursor);
+    }
 }
 
 // --- Table Layout (Two-Pass) ---
