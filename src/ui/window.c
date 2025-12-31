@@ -78,7 +78,7 @@ static void UpdateScrollBars(HWND hwnd) {
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_history = history_create();
-    
+
     // Initialize Common Controls for Animation and Progress Bar
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
@@ -134,7 +134,7 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         className,
         "Gem32 Browser",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
+        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,
         NULL, NULL, hInstance, NULL
     );
 
@@ -156,12 +156,12 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 static void LoaderProgressCallback(int current, int total, void *ctx) {
     HWND hLoadingPanel = (HWND)ctx;
     HWND hProgress = GetDlgItem(hLoadingPanel, ID_PROG_CTRL);
-    
+
     if (total > 0) {
         SendMessage(hProgress, PBM_SETRANGE, 0, MAKELPARAM(0, total));
         SendMessage(hProgress, PBM_SETPOS, current, 0);
     }
-    
+
     // Pump messages to keep UI responsive and ANIMATION playing
     MSG msg;
     while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -216,7 +216,7 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     // Show Loading Panel, Hide Content
     ShowWindow(hContent, SW_HIDE);
     ShowWindow(hLoadingPanel, SW_SHOW);
-    
+
     // Start Animation
     if (g_hShell32) {
         if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
@@ -241,14 +241,14 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     g_current_dom = html_parse(res->data);
     if (g_current_dom) {
         style_compute(g_current_dom);
-        
+
         int total = loader_count_resources(g_current_dom);
         int current = 0;
-        
+
         // Init bar
         SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, total > 0 ? total : 1));
         SendMessage(hProg, PBM_SETPOS, 0, 0);
-        
+
         // Fetch resources (blocking with message pump)
         loader_fetch_resources(g_current_dom, url, LoaderProgressCallback, hLoadingPanel, &current, total);
 
@@ -280,7 +280,7 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     SendMessage(hAnim, ACM_STOP, 0, 0);
     ShowWindow(hLoadingPanel, SW_HIDE);
     ShowWindow(hContent, SW_SHOW);
-    
+
     // Trigger repaint
     InvalidateRect(hContent, NULL, TRUE);
     UpdateWindow(hContent);
@@ -288,10 +288,10 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
 
 static void Navigate(HWND hwnd, const char *url) {
     LOG_INFO("Navigating to: %s", url);
-    
+
     // Could show a "Connecting..." status here if needed, but network_fetch is blocking
     // and usually faster than resource loading.
-    
+
     network_response_t *res = network_fetch(url);
     if (res) {
         ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, res->final_url ? res->final_url : url);
