@@ -74,6 +74,7 @@ static void draw_history_tree_vertical(HDC hdc, history_node_t *node, history_no
 
     int iconSize = 16;
     int spacing = 24;  // Vertical spacing between items
+    int iconCenter = iconSize / 2;
 
     // Draw current node
     int curY = *y_pos;
@@ -101,9 +102,21 @@ static void draw_history_tree_vertical(HDC hdc, history_node_t *node, history_no
             SelectObject(hdc, oldPen);
             DeleteObject(hPen);
         }
+
+        // Draw connection line to first child if has children
+        if (node->children_count > 0) {
+            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
+            HPEN oldPen = SelectObject(hdc, hPen);
+            // Draw vertical line from bottom of this node to first child
+            MoveToEx(hdc, x + iconCenter, curY + iconSize, NULL);
+            LineTo(hdc, x + iconCenter, curY - spacing + iconSize / 2);
+            SelectObject(hdc, oldPen);
+            DeleteObject(hPen);
+        }
     }
 
-    *y_pos -= spacing;  // Move up for next item
+    int nextY = *y_pos - spacing;  // Move up for next item
+    *y_pos = nextY;
 
     // Draw children at increased horizontal offset (indentation)
     for (int i = 0; i < node->children_count; i++) {

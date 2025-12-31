@@ -59,3 +59,46 @@ void history_free(history_tree_t *tree) {
     history_node_free(tree->root);
     free(tree);
 }
+
+// Check if target_url matches any child URL of current node
+int history_is_new_branch(history_node_t *current, const char *target_url) {
+    if (!current || !target_url) return 1;
+
+    for (int i = 0; i < current->children_count; i++) {
+        if (current->children[i] && current->children[i]->url &&
+            strcmp(current->children[i]->url, target_url) == 0) {
+            return 0;  // Found matching child - not a new branch
+        }
+    }
+    return 1;  // No matching child - this is a new branch
+}
+
+// Navigate to existing history node and create branch if needed
+void history_navigate_to(history_tree_t *tree, history_node_t *target, const char *url, const char *title) {
+    if (!tree || !target) return;
+
+    tree->current = target;
+    // If navigating forward from target (adding new content), it will be added as child via history_add
+}
+
+// Reset history: create a new root for completely new URL (manual navigation)
+void history_reset(history_tree_t *tree, const char *url, const char *title) {
+    if (!tree) return;
+
+    // Create a new root
+    history_node_t *new_root = history_node_create(url, title);
+
+    // Preserve the old tree as a child of the new root (creates parallel branch above)
+    if (tree->root) {
+        if (new_root->children_capacity == 0) {
+            new_root->children_capacity = 4;
+            new_root->children = malloc(sizeof(history_node_t*) * new_root->children_capacity);
+        }
+        // Add old root as a child of new root (old tree becomes a branch)
+        new_root->children[new_root->children_count++] = tree->root;
+        tree->root->parent = new_root;
+    }
+
+    tree->root = new_root;
+    tree->current = new_root;
+}

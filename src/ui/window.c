@@ -43,6 +43,7 @@ node_t *g_focused_node = NULL;
 static char g_current_url[2048] = {0};
 static HMODULE g_hShell32 = NULL;
 static int g_skip_history = 0;
+static int g_manual_navigation = 0;  // Set to 1 when user manually navigates (address bar)
 
 // Scrollbar State
 static int g_scroll_x = 0;
@@ -263,7 +264,30 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
         UpdateScrollBars(hContent);
 
         if (!g_skip_history) {
-            history_add(g_history, url, "Title Placeholder");
+            // Handle branching history
+            if (g_manual_navigation) {
+                // User manually navigated - create a new root tree
+                history_reset(g_history, url, "Title Placeholder");
+            } else {
+                // Check if this creates a new branch from current node
+                if (g_history->current && history_is_new_branch(g_history->current, url)) {
+                    // New branch - add as child of current node
+                    history_add(g_history, url, "Title Placeholder");
+                } else if (g_history->current && !history_is_new_branch(g_history->current, url)) {
+                    // Navigating to an existing child - just update current
+                    for (int i = 0; i < g_history->current->children_count; i++) {
+                        if (g_history->current->children[i] &&
+                            g_history->current->children[i]->url &&
+                            strcmp(g_history->current->children[i]->url, url) == 0) {
+                            history_navigate_to(g_history, g_history->current->children[i], url, "Title Placeholder");
+                            break;
+                        }
+                    }
+                } else {
+                    // Fallback - add normally
+                    history_add(g_history, url, "Title Placeholder");
+                }
+            }
             history_ui_fetch_favicon(g_history->current);
         }
         InvalidateRect(GetDlgItem(hMain, ID_HISTORY), NULL, TRUE);
@@ -504,7 +528,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (LOWORD(wParam) == ID_BTN_GO) {
                 char url[1024];
                 GetWindowText(GetDlgItem(hwnd, ID_EDIT_URL), url, sizeof(url));
+                g_manual_navigation = 1;
                 Navigate(hwnd, url);
+                g_manual_navigation = 0;
             } else if (LOWORD(wParam) == ID_BTN_STAR) {
                 char url[1024];
                 GetWindowText(GetDlgItem(hwnd, ID_EDIT_URL), url, sizeof(url));
