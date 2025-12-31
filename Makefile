@@ -1,8 +1,8 @@
 CC = i686-w64-mingw32-gcc
 CFLAGS = -std=c99 -Wall -Wextra -Isrc -D_WIN32_WINNT=0x0501
-LDFLAGS = -mwindows -lcomctl32 -lgdi32
+LDFLAGS = -mwindows -lcomctl32 -lgdi32 -lwininet
 
-SRC = src/main.c src/ui/window.c
+SRC = src/main.c src/ui/window.c src/network/http.c
 OBJ = $(SRC:.c=.o)
 TARGET = gem32.exe
 
