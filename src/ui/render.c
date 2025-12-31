@@ -1,6 +1,40 @@
 #include "render.h"
 #include <stdio.h>
 #include <olectl.h>
+#include "core/platform.h"
+
+// Implementation of core/platform.h interface
+void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height) {
+    if (!text || !out_width || !out_height) return;
+
+    // Create a temporary DC for measurement
+    HDC hdc = CreateCompatibleDC(NULL);
+    
+    // Select default font (same as Render)
+    HFONT hFont = GetStockObject(DEFAULT_GUI_FONT);
+    HFONT oldFont = SelectObject(hdc, hFont);
+
+    RECT r = {0, 0, 0, 0};
+    if (width_constraint > 0) {
+        r.right = width_constraint;
+    }
+
+    UINT format = DT_LEFT | DT_NOPREFIX;
+    if (width_constraint > 0) {
+        format |= DT_WORDBREAK;
+    } else {
+        format |= DT_CALCRECT; // Just expands right
+    }
+    
+    // Calculate
+    DrawText(hdc, text, -1, &r, format | DT_CALCRECT);
+
+    *out_width = r.right - r.left;
+    *out_height = r.bottom - r.top;
+
+    SelectObject(hdc, oldFont);
+    DeleteDC(hdc);
+}
 
 static void set_color_from_style(HDC hdc, style_t *style) {
     if (!style) return;

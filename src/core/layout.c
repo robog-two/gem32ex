@@ -1,4 +1,5 @@
 #include "layout.h"
+#include "platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -33,19 +34,6 @@ static int is_inline(node_t *node) {
     return node->style->display == DISPLAY_INLINE;
 }
 
-static int get_intrinsic_width(layout_box_t *box) {
-    node_t *node = box->node;
-    if (node->type == DOM_NODE_TEXT && node->content) {
-        // Mock: 8px per character. Real browser would measure glyphs.
-        return strlen(node->content) * 8; 
-    }
-    if (node->type == DOM_NODE_ELEMENT && node->tag_name && strcasecmp(node->tag_name, "img") == 0) {
-        if (node->style->width > 0) return node->style->width;
-        return 100; // Default placeholder
-    }
-    return 0;
-}
-
 // --- Inline Layout Algorithm (Fragment-based Line Buffering) ---
 
 #define MAX_LINE_FRAGMENTS 256
@@ -70,7 +58,7 @@ static void flush_line(line_info_t *line, int x_offset, int *y_cursor, int avail
     for (int i = 0; i < line->count; i++) {
         layout_box_t *child = line->items[i];
         child->fragment.border_box.x = x_start;
-        // Simple vertical alignment: top
+        // Simple vertical alignment: top (should be baseline, but simple for now)
         child->fragment.border_box.y = *y_cursor; 
         
         x_start += child->fragment.border_box.width;
@@ -86,6 +74,7 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
     line_info_t line = {0};
     int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
+    if (available_width <= 0) available_width = space.available_width; // Fallback
     
     layout_box_t *child = box->first_child;
     while (child) {
@@ -95,27 +84,59 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
         }
 
         // 1. Measure child
-        // Inline children ignore available_width for their *own* preferred width
-        // but are constrained by the line buffer.
+        // Inline children usually measure intrinsically, unless constrained (like wrapped text)
         constraint_space_t child_space = space;
         child_space.available_width = available_width;
-        child_space.is_fixed_width = 0;
+        
+        int child_w = 0;
+        int child_h = 0;
 
-        layout_compute(child, child_space);
+        if (child->node->type == DOM_NODE_TEXT && child->node->content) {
+            // Check if it fits as a single line first
+            int w, h;
+            platform_measure_text(child->node->content, child->node->style, -1, &w, &h);
+            
+            if (line.width + w > available_width && line.count > 0) {
+                // Won't fit on current line, flush current line
+                flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+            }
+            
+            // Now check if it fits on a fresh line
+            if (w > available_width) {
+                // Too big for a single line, must wrap internally
+                platform_measure_text(child->node->content, child->node->style, available_width, &w, &h);
+            }
+            
+            child_w = w;
+            child_h = h;
+            child->fragment.border_box.width = w;
+            child->fragment.border_box.height = h;
+        } else {
+            // Recursively layout element (e.g. <img>, <b>, <span>)
+            layout_compute(child, child_space);
+            child_w = child->fragment.border_box.width;
+            child_h = child->fragment.border_box.height;
 
-        int child_w = child->fragment.border_box.width;
-        int child_h = child->fragment.border_box.height;
-
-        // 2. Fit in line
-        if (line.width + child_w > available_width && line.count > 0) {
-            flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+             // Logic to flush if element doesn't fit
+            if (line.width + child_w > available_width && line.count > 0) {
+                flush_line(&line, x_start, y_cursor, available_width, box->node->style->text_align);
+            }
         }
 
+        // Add to line
         if (line.count < MAX_LINE_FRAGMENTS) {
             line.items[line.count++] = child;
             line.width += child_w;
             if (child_h > line.height) line.height = child_h;
         }
+
+        // If even after wrapping internally, it still consumes the full line (or more),
+        // we essentially just flushed before adding it, and now we might need to flush after?
+        // But flush_line logic just positions items.
+        // If 'child' is now effectively a block (wrapped text), it sits on this line.
+        // If another item comes, it will check "line.width + next_w > available".
+        // Since child_w is likely == available_width, it will force next item to new line.
+        // This is correct behavior for "Atomic Inline Block" text wrapping.
 
         child = child->next_sibling;
     }
@@ -147,8 +168,14 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         if (style->width > 0) box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
         else box->fragment.border_box.width = space.available_width;
     } else {
-        // Inline-level
-        box->fragment.border_box.width = get_intrinsic_width(box);
+        // Inline-level (non-text inline-block or similar)
+        // For text, width is handled in layout_inline_children.
+        // For images or others:
+        if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
+             box->fragment.border_box.width = (style->width > 0) ? style->width : 100;
+        } else {
+             box->fragment.border_box.width = 0; // Or measure content?
+        }
     }
 
     // Content area
