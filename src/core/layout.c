@@ -84,8 +84,13 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
     // Relative X start (from parent's content box left edge)
     // Parent content box x is relative to parent border box.
     // So if we want child pos relative to parent border box, we start at content box offset.
-    int x_start = box->fragment.content_box.x; 
+    int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
+
+    const char *tag = box->node->tag_name ? box->node->tag_name : "?";
+    if (box->node->tag_name && strcasecmp(tag, "form") == 0) {
+        LOG_INFO("  <%s> inline layout: available_width=%d, y_cursor=%d", tag, available_width, *y_cursor);
+    }
     
     layout_box_t *child = box->first_child;
     while (child) {
@@ -210,16 +215,41 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     int bw = style->border_width;
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
     int ml = style->margin_left, mr = style->margin_right;
+    int mt = style->margin_top, mb = style->margin_bottom;
+
+    const char *tag = box->node->tag_name ? box->node->tag_name : (box->node->type == DOM_NODE_TEXT ? "TEXT" : "?");
+
+    // Log layout computation start for key elements
+    if (box->node->tag_name && (strcasecmp(tag, "html") == 0 || strcasecmp(tag, "body") == 0 ||
+                                 strcasecmp(tag, "h1") == 0 || strcasecmp(tag, "h3") == 0 ||
+                                 strcasecmp(tag, "p") == 0 || strcasecmp(tag, "form") == 0 ||
+                                 strcasecmp(tag, "center") == 0)) {
+        LOG_INFO("LAYOUT <%s>: available_width=%d, margins=(%d,%d,%d,%d), padding=(%d,%d,%d,%d), border=%d",
+                 tag, space.available_width, mt, mr, mb, ml, pt, pr, pb, pl, bw);
+    }
 
     // Resolve Width
     if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
+        if (box->node->tag_name && (strcasecmp(tag, "html") == 0 || strcasecmp(tag, "body") == 0 ||
+                                     strcasecmp(tag, "h1") == 0 || strcasecmp(tag, "h3") == 0 ||
+                                     strcasecmp(tag, "p") == 0 || strcasecmp(tag, "form") == 0)) {
+            LOG_INFO("  <%s> explicit width: style.width=%d → border_box.width=%d",
+                     tag, style->width, box->fragment.border_box.width);
+        }
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
                style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
         // For block elements, border box width = available width minus horizontal margins
         // (margins are outside the border box)
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
+        if (box->node->tag_name && (strcasecmp(tag, "html") == 0 || strcasecmp(tag, "body") == 0 ||
+                                     strcasecmp(tag, "h1") == 0 || strcasecmp(tag, "h3") == 0 ||
+                                     strcasecmp(tag, "p") == 0 || strcasecmp(tag, "form") == 0 ||
+                                     strcasecmp(tag, "center") == 0)) {
+            LOG_INFO("  <%s> auto width: %d - %d - %d = %d",
+                     tag, space.available_width, ml, mr, box->fragment.border_box.width);
+        }
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
         box->fragment.border_box.width = 100; // Default image width
     } else {
@@ -236,6 +266,14 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     if (box->fragment.content_box.width < 0) box->fragment.content_box.width = 0;
     box->fragment.content_box.x = bw + pl;
     box->fragment.content_box.y = bw + pt;
+
+    if (box->node->tag_name && (strcasecmp(tag, "html") == 0 || strcasecmp(tag, "body") == 0 ||
+                                 strcasecmp(tag, "h1") == 0 || strcasecmp(tag, "h3") == 0 ||
+                                 strcasecmp(tag, "p") == 0 || strcasecmp(tag, "form") == 0 ||
+                                 strcasecmp(tag, "center") == 0)) {
+        LOG_INFO("  <%s> content_box: width=%d (border_box %d - border*2 %d - padding %d)",
+                 tag, box->fragment.content_box.width, box->fragment.border_box.width, bw*2, pl+pr);
+    }
 
     if (style->display == DISPLAY_TABLE) {
         layout_table(box, space);
@@ -267,6 +305,21 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
                         // Margin collapses through - don't add it to child_y
                         collapse = 0;
                     }
+                    const char *child_tag = child->node->tag_name ? child->node->tag_name : "?";
+                    if (child->node->tag_name && (strcasecmp(child_tag, "h1") == 0 || strcasecmp(child_tag, "h3") == 0 ||
+                                                   strcasecmp(child_tag, "p") == 0 || strcasecmp(child_tag, "form") == 0 ||
+                                                   strcasecmp(child_tag, "center") == 0 || strcasecmp(child_tag, "br") == 0)) {
+                        LOG_INFO("  <%s> first child <%s>: margin_top=%d, parent padding/border=%d/%d, collapse=%d",
+                                 tag, child_tag, cur_mt, pt, bw, collapse);
+                    }
+                } else {
+                    const char *child_tag = child->node->tag_name ? child->node->tag_name : "?";
+                    if (child->node->tag_name && (strcasecmp(child_tag, "h1") == 0 || strcasecmp(child_tag, "h3") == 0 ||
+                                                   strcasecmp(child_tag, "p") == 0 || strcasecmp(child_tag, "form") == 0 ||
+                                                   strcasecmp(child_tag, "center") == 0)) {
+                        LOG_INFO("  <%s> child <%s>: margin_top=%d, prev_margin_bottom=%d, collapse=%d",
+                                 tag, child_tag, cur_mt, prev_margin_bottom, collapse);
+                    }
                 }
                 child_y += collapse;
                 is_first_child = 0;
@@ -274,6 +327,14 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
             // Pass parent's content box width as available width to child
             // Child will subtract its own margins from this
             constraint_space_t child_space = {box->fragment.content_box.width, 0, 1, 0};
+
+            const char *child_tag = child->node->tag_name ? child->node->tag_name : (child->node->type == DOM_NODE_TEXT ? "TEXT" : "?");
+            if (child->node->tag_name && (strcasecmp(child_tag, "h1") == 0 || strcasecmp(child_tag, "h3") == 0 ||
+                                           strcasecmp(child_tag, "p") == 0 || strcasecmp(child_tag, "form") == 0 ||
+                                           strcasecmp(child_tag, "center") == 0 || strcasecmp(child_tag, "br") == 0)) {
+                LOG_INFO("  <%s> laying out child <%s> with available_width=%d",
+                         tag, child_tag, child_space.available_width);
+            }
 
             // Set child position relative to THIS box
             // child->x = content_left + margin_left
@@ -291,6 +352,13 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         }
         // Last child's bottom margin: only add if parent has bottom padding or border
         // Otherwise it collapses through the parent
+        if (box->node->tag_name && (strcasecmp(tag, "html") == 0 || strcasecmp(tag, "body") == 0 ||
+                                     strcasecmp(tag, "h1") == 0 || strcasecmp(tag, "h3") == 0 ||
+                                     strcasecmp(tag, "p") == 0 || strcasecmp(tag, "form") == 0 ||
+                                     strcasecmp(tag, "center") == 0)) {
+            LOG_INFO("  <%s> last child bottom margin: prev_margin_bottom=%d, parent pb/bw=%d/%d, %s",
+                     tag, prev_margin_bottom, pb, bw, (pb > 0 || bw > 0) ? "ADDED" : "COLLAPSED");
+        }
         if (pb > 0 || bw > 0) {
             child_y += prev_margin_bottom;
         }
@@ -320,10 +388,22 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     int content_height = child_y - (box->fragment.content_box.y); // child_y is relative to border box top
     if (content_height < 0) content_height = 0;
 
-    if (style->height > 0) box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
-    else box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
-    
+    if (style->height > 0) {
+        box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
+    } else {
+        box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
+    }
+
     if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) box->fragment.border_box.height = 16;
+
+    if (box->node->tag_name && (strcasecmp(tag, "html") == 0 || strcasecmp(tag, "body") == 0 ||
+                                 strcasecmp(tag, "h1") == 0 || strcasecmp(tag, "h3") == 0 ||
+                                 strcasecmp(tag, "p") == 0 || strcasecmp(tag, "form") == 0 ||
+                                 strcasecmp(tag, "center") == 0)) {
+        LOG_INFO("  <%s> FINAL: border_box=%dx%d, content_height=%d, child_y=%d, content_box.y=%d",
+                 tag, box->fragment.border_box.width, box->fragment.border_box.height,
+                 content_height, child_y, box->fragment.content_box.y);
+    }
 }
 
 layout_box_t* layout_create_tree(node_t *root, int container_width) {

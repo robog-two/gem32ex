@@ -119,9 +119,9 @@ void style_compute(node_t *node) {
             style->margin_top = style->margin_bottom = 20; // 0.83em
         } else if (strcasecmp(node->tag_name, "h3") == 0) {
             style->display = DISPLAY_BLOCK;
-            style->font_size = 19; // 1.17em
+            style->font_size = 19; // 1.17em (Firefox uses 18.72 but we round to 19)
             style->font_weight = 700;
-            style->margin_top = style->margin_bottom = 16; // 1em
+            style->margin_top = style->margin_bottom = 19; // Match h3 font-size for 1em margin
         } else if (strcasecmp(node->tag_name, "h4") == 0) {
             style->display = DISPLAY_BLOCK;
             style->font_size = 16; // 1em

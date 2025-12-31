@@ -1,0 +1,186 @@
+=== Firefox Layout Measurements ===
+
+<html>:
+  Border Box: 863x542
+  Content Box: 863x542
+  Margins (T R B L): 0 0 0 0
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 16px
+  Line Height: normal
+  Display: block
+  Children (2): HEAD, BODY
+
+<body>:
+  Border Box: 847x526
+  Content Box: 847x526
+  Margins (T R B L): 8 8 8 8
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 16px
+  Line Height: normal
+  Display: block
+  Children (12): BR, BR, CENTER, P, CENTER, BR, BR, CENTER, BR, BR, BR, SMALL
+
+<h1>:
+  Border Box: 847x58
+  Content Box: 847x58
+  Margins (T R B L): 21.44 0 21.44 0
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 32px
+  Line Height: normal
+  Display: block
+  Children (1): FONT
+
+<p>:
+  Border Box: 847x134
+  Content Box: 847x134
+  Margins (T R B L): 16 0 16 0
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 16px
+  Line Height: normal
+  Display: block
+
+<h3>:
+  Border Box: 847x20
+  Content Box: 847x20
+  Margins (T R B L): 18.72 0 18.72 0
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 18.72px
+  Line Height: normal
+  Display: block
+
+<form>:
+  Border Box: 847x44
+  Content Box: 847x44
+  Margins (T R B L): 0 0 0 0
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 16px
+  Line Height: normal
+  Display: block
+  Children (3): INPUT, BR, INPUT
+
+<center>:
+  Border Box: 847x58
+  Content Box: 847x58
+  Margins (T R B L): 0 0 0 0
+  Padding (T R B L): 0 0 0 0
+  Border (T R B L): 0 0 0 0
+  Font Size: 16px
+  Line Height: normal
+  Display: block
+  Children (1): H1
+
+
+=== C Array Format for test_core.c ===
+{"html", 863, 542},
+{"body", 847, 526},
+{"h1", 847, 58},
+{"p", 847, 134},
+{"h3", 847, 20},
+{"form", 847, 44},
+{"center", 847, 58},
+
+=== Body Height Breakdown ===
+Body border box height: 526px
+  Top margin: 8px
+  Top padding: 0px
+  Top border: 0px
+  Bottom padding: 0px
+  Bottom border: 0px
+  Bottom margin: 8px
+
+  Children layout:
+    [0] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=8 bottom=27
+    [1] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=27 bottom=46
+    [2] <center>:
+        Height: 58px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 21px
+        Position: top=68 bottom=125
+    [3] <p>:
+        Height: 134px
+        Margin top: 16px
+        Margin bottom: 16px
+        Gap from previous: 21px
+        Position: top=147 bottom=281
+    [4] <center>:
+        Height: 20px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 19px
+        Position: top=300 bottom=319
+    [5] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 19px
+        Position: top=338 bottom=357
+    [6] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=357 bottom=377
+    [7] <center>:
+        Height: 44px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=377 bottom=421
+    [8] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=421 bottom=440
+    [9] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=440 bottom=459
+    [10] <br>:
+        Height: 19px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=459 bottom=478
+    [11] <small>:
+        Height: 56px
+        Margin top: 0px
+        Margin bottom: 0px
+        Gap from previous: 0px
+        Position: top=478 bottom=534
+
+  Final gap to bottom edge: 0px
+
+=== Form Element Details ===
+Form border box: 847x44
+Form display: block
+Form has 3 children + 3 text/other nodes
+
+  Form children:
+    [0] TEXT: "Leap to:"
+    [1] <input>: 273x22
+    [2] <br>: 0x19
+    [4] <input>: 60x22
+
+=== Viewport Info ===
+Iframe inner width: 863px
+Iframe inner height: 700px

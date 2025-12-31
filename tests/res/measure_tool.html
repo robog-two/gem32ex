@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Firefox Layout Measurement Tool</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        #controls {
+            background: white;
+            padding: 15px;
+            border: 2px solid #333;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #results {
+            background: white;
+            padding: 15px;
+            border: 2px solid #333;
+            white-space: pre-wrap;
+            font-size: 12px;
+        }
+        .section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
+        .tag {
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .value {
+            color: #cc0000;
+        }
+        iframe {
+            width: 863px;
+            height: 700px;
+            border: 2px solid #333;
+            background: white;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Firefox Layout Measurement Tool</h1>
+    <p>This tool measures the exact dimensions and box model properties of elements in testdocument.html as rendered by Firefox.</p>
+
+    <div id="controls">
+        <button onclick="loadDocument()">Load Test Document</button>
+        <button onclick="measureElements()">Measure Elements</button>
+        <button onclick="copyResults()">Copy to Clipboard</button>
+        <button onclick="clearResults()">Clear</button>
+    </div>
+
+    <div id="results"></div>
+
+    <iframe id="testFrame" src="testdocument.html"></iframe>
+
+    <script>
+        let measurementData = '';
+
+        function loadDocument() {
+            document.getElementById('testFrame').src = 'testdocument.html?' + Date.now();
+            document.getElementById('results').innerHTML = '<span style="color: green;">Test document loaded. Click "Measure Elements" to analyze.</span>';
+        }
+
+        function measureElements() {
+            const iframe = document.getElementById('testFrame');
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            const win = iframe.contentWindow;
+
+            if (!doc || !win) {
+                alert('Cannot access iframe content. Make sure testdocument.html is loaded.');
+                return;
+            }
+
+            const elements = ['html', 'body', 'h1', 'p', 'h3', 'form', 'center'];
+            let output = '=== Firefox Layout Measurements ===\n\n';
+            const results = [];
+
+            elements.forEach(tagName => {
+                const el = doc.querySelector(tagName);
+                if (!el) {
+                    output += `<${tagName}>: NOT FOUND\n\n`;
+                    return;
+                }
+
+                const computed = win.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+
+                // Get all box model values
+                const marginTop = parseFloat(computed.marginTop);
+                const marginRight = parseFloat(computed.marginRight);
+                const marginBottom = parseFloat(computed.marginBottom);
+                const marginLeft = parseFloat(computed.marginLeft);
+
+                const paddingTop = parseFloat(computed.paddingTop);
+                const paddingRight = parseFloat(computed.paddingRight);
+                const paddingBottom = parseFloat(computed.paddingBottom);
+                const paddingLeft = parseFloat(computed.paddingLeft);
+
+                const borderTop = parseFloat(computed.borderTopWidth);
+                const borderRight = parseFloat(computed.borderRightWidth);
+                const borderBottom = parseFloat(computed.borderBottomWidth);
+                const borderLeft = parseFloat(computed.borderLeftWidth);
+
+                const fontSize = parseFloat(computed.fontSize);
+                const lineHeight = computed.lineHeight;
+
+                // Calculate dimensions
+                const borderBoxWidth = rect.width;
+                const borderBoxHeight = rect.height;
+
+                const contentWidth = borderBoxWidth - paddingLeft - paddingRight - borderLeft - borderRight;
+                const contentHeight = borderBoxHeight - paddingTop - paddingBottom - borderTop - borderBottom;
+
+                results.push({
+                    tag: tagName,
+                    width: Math.round(borderBoxWidth),
+                    height: Math.round(borderBoxHeight)
+                });
+
+                // Build output
+                output += `<${tagName}>:\n`;
+                output += `  Border Box: ${Math.round(borderBoxWidth)}x${Math.round(borderBoxHeight)}\n`;
+                output += `  Content Box: ${Math.round(contentWidth)}x${Math.round(contentHeight)}\n`;
+                output += `  Margins (T R B L): ${marginTop} ${marginRight} ${marginBottom} ${marginLeft}\n`;
+                output += `  Padding (T R B L): ${paddingTop} ${paddingRight} ${paddingBottom} ${paddingLeft}\n`;
+                output += `  Border (T R B L): ${borderTop} ${borderRight} ${borderBottom} ${borderLeft}\n`;
+                output += `  Font Size: ${fontSize}px\n`;
+                output += `  Line Height: ${lineHeight}\n`;
+                output += `  Display: ${computed.display}\n`;
+
+                // For elements with children, show child count
+                if (el.children.length > 0) {
+                    const childInfo = Array.from(el.children).map(c => c.tagName).join(', ');
+                    output += `  Children (${el.children.length}): ${childInfo}\n`;
+                }
+
+                output += '\n';
+            });
+
+            // Generate C array format
+            output += '\n=== C Array Format for test_core.c ===\n';
+            results.forEach(info => {
+                output += `{"${info.tag}", ${info.width}, ${info.height}},\n`;
+            });
+
+            // Body height breakdown
+            output += '\n=== Body Height Breakdown ===\n';
+            const body = doc.querySelector('body');
+            if (body) {
+                const bodyComputed = win.getComputedStyle(body);
+                const bodyRect = body.getBoundingClientRect();
+
+                output += `Body border box height: ${Math.round(bodyRect.height)}px\n`;
+                output += `  Top margin: ${bodyComputed.marginTop}\n`;
+                output += `  Top padding: ${bodyComputed.paddingTop}\n`;
+                output += `  Top border: ${bodyComputed.borderTopWidth}\n`;
+                output += `  Bottom padding: ${bodyComputed.paddingBottom}\n`;
+                output += `  Bottom border: ${bodyComputed.borderBottomWidth}\n`;
+                output += `  Bottom margin: ${bodyComputed.marginBottom}\n\n`;
+
+                let prevBottom = bodyRect.top + parseFloat(bodyComputed.paddingTop) + parseFloat(bodyComputed.borderTopWidth);
+
+                output += `  Children layout:\n`;
+                Array.from(body.children).forEach((child, i) => {
+                    const childRect = child.getBoundingClientRect();
+                    const childComputed = win.getComputedStyle(child);
+                    const marginTop = parseFloat(childComputed.marginTop);
+                    const marginBottom = parseFloat(childComputed.marginBottom);
+
+                    const gap = childRect.top - prevBottom;
+                    output += `    [${i}] <${child.tagName.toLowerCase()}>:\n`;
+                    output += `        Height: ${Math.round(childRect.height)}px\n`;
+                    output += `        Margin top: ${marginTop}px\n`;
+                    output += `        Margin bottom: ${marginBottom}px\n`;
+                    output += `        Gap from previous: ${Math.round(gap)}px\n`;
+                    output += `        Position: top=${Math.round(childRect.top)} bottom=${Math.round(childRect.bottom)}\n`;
+
+                    prevBottom = childRect.bottom;
+                });
+
+                const bodyBottom = bodyRect.bottom - parseFloat(bodyComputed.paddingBottom) - parseFloat(bodyComputed.borderBottomWidth);
+                const finalGap = bodyBottom - prevBottom;
+                output += `\n  Final gap to bottom edge: ${Math.round(finalGap)}px\n`;
+            }
+
+            // Form element details
+            output += '\n=== Form Element Details ===\n';
+            const form = doc.querySelector('form');
+            if (form) {
+                const formRect = form.getBoundingClientRect();
+                const formComputed = win.getComputedStyle(form);
+
+                output += `Form border box: ${Math.round(formRect.width)}x${Math.round(formRect.height)}\n`;
+                output += `Form display: ${formComputed.display}\n`;
+                output += `Form has ${form.children.length} children + ${form.childNodes.length - form.children.length} text/other nodes\n\n`;
+
+                output += `  Form children:\n`;
+                Array.from(form.childNodes).forEach((node, i) => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const nodeRect = node.getBoundingClientRect();
+                        output += `    [${i}] <${node.tagName.toLowerCase()}>: ${Math.round(nodeRect.width)}x${Math.round(nodeRect.height)}\n`;
+                    } else if (node.nodeType === Node.TEXT_NODE) {
+                        const text = node.textContent.trim();
+                        if (text) {
+                            output += `    [${i}] TEXT: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}"\n`;
+                        }
+                    }
+                });
+            }
+
+            // Viewport info
+            output += '\n=== Viewport Info ===\n';
+            output += `Iframe inner width: ${win.innerWidth}px\n`;
+            output += `Iframe inner height: ${win.innerHeight}px\n`;
+
+            measurementData = output;
+            document.getElementById('results').innerText = output;
+        }
+
+        function copyResults() {
+            if (!measurementData) {
+                alert('No measurements to copy. Click "Measure Elements" first.');
+                return;
+            }
+
+            navigator.clipboard.writeText(measurementData).then(() => {
+                alert('Results copied to clipboard!');
+            }).catch(err => {
+                alert('Failed to copy: ' + err);
+            });
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            measurementData = '';
+        }
+
+        // Auto-load on page load
+        window.onload = function() {
+            loadDocument();
+        };
+    </script>
+</body>
+</html>
