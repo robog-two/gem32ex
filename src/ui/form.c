@@ -75,7 +75,7 @@ static void collect_inputs(node_t *root, char **buffer, size_t *size) {
     }
 }
 
-network_response_t* form_submit(node_t *submit_node, const char *base_url) {
+network_response_t* form_submit(node_t *submit_node, const char *base_url, char *out_url, size_t out_url_size) {
     node_t *form = find_enclosing_form(submit_node);
     if (!form) return NULL;
 
@@ -86,14 +86,16 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url) {
     // Resolve URL (Simple logic)
     char target_url[2048];
     if (action && strlen(action) > 0) {
-        // Check if absolute
         if (strstr(action, "://")) {
             strncpy(target_url, action, sizeof(target_url));
         } else {
-            // Relative
-            // TODO: Better relative URL resolving using base_url
-            snprintf(target_url, sizeof(target_url), "%s/%s", base_url, action); 
-            // Very hacky, ideally strip filename from base_url first
+            // Relative (simplistic)
+            if (action[0] == '/') {
+                // To root - simplified
+                snprintf(target_url, sizeof(target_url), "http://%s", action); // FIXME: Need proper domain parsing
+            } else {
+                snprintf(target_url, sizeof(target_url), "%s/%s", base_url, action); 
+            }
         }
     } else {
         strncpy(target_url, base_url, sizeof(target_url));
@@ -106,11 +108,13 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url) {
 
     network_response_t *res = NULL;
     if (strcasecmp(method, "POST") == 0) {
+        if (out_url) strncpy(out_url, target_url, out_url_size);
         res = http_post(target_url, body, "application/x-www-form-urlencoded");
     } else {
         // GET - append query string
         char full_url[4096];
         snprintf(full_url, sizeof(full_url), "%s?%s", target_url, body);
+        if (out_url) strncpy(out_url, full_url, out_url_size);
         res = http_fetch(full_url);
     }
 

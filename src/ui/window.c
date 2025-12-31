@@ -77,38 +77,45 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 
 // ...
 
-static void Navigate(HWND hwnd, const char *url) {
+static void ProcessNewContent(HWND hContent, network_response_t *res, const char *url) {
+    if (!res || !res->data) return;
+
+    // Free previous DOM and Layout
+    if (g_current_layout) {
+        layout_free(g_current_layout);
+        g_current_layout = NULL;
+    }
+    if (g_current_dom) {
+        node_free(g_current_dom);
+        g_current_dom = NULL;
+    }
+
     strncpy(g_current_url, url, sizeof(g_current_url)-1);
     
-    network_response_t *res = http_fetch(url);
-    if (res && res->data) {
-        // Free previous DOM and Layout
-        if (g_current_layout) {
-            layout_free(g_current_layout);
-            g_current_layout = NULL;
-        }
-        if (g_current_dom) {
-            node_free(g_current_dom);
-            g_current_dom = NULL;
-        }
+    // Update Address Bar (ID_EDIT_URL is in the parent window)
+    HWND hMain = GetParent(hContent);
+    SetWindowText(GetDlgItem(hMain, ID_EDIT_URL), g_current_url);
 
-        g_current_dom = html_parse(res->data);
-        if (g_current_dom) {
-            loader_fetch_resources(g_current_dom, url);
-            style_compute(g_current_dom);
-            
-            HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
-            RECT rect;
-            GetClientRect(hContent, &rect);
-            int width = rect.right - rect.left;
-            
-            g_current_layout = layout_create_tree(g_current_dom, width);
-            
-            history_add(g_history, url, "Title Placeholder");
-            
-            // Trigger repaint
-            InvalidateRect(hContent, NULL, TRUE);
-        }
+    g_current_dom = html_parse(res->data);
+    if (g_current_dom) {
+        loader_fetch_resources(g_current_dom, url);
+        style_compute(g_current_dom);
+        
+        RECT rect;
+        GetClientRect(hContent, &rect);
+        g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
+        
+        history_add(g_history, url, "Title Placeholder");
+        
+        // Trigger repaint
+        InvalidateRect(hContent, NULL, TRUE);
+    }
+}
+
+static void Navigate(HWND hwnd, const char *url) {
+    network_response_t *res = http_fetch(url);
+    if (res) {
+        ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, url);
         network_response_free(res);
     } else {
         MessageBox(hwnd, "Failed to fetch URL", "Error", MB_ICONERROR);
@@ -142,24 +149,10 @@ static void HandleClick(HWND hContent, int x, int y) {
         }
 
         if (is_submit) {
-            network_response_t *res = form_submit(node, g_current_url);
-            if (res && res->data) {
-                if (g_current_layout) { layout_free(g_current_layout); g_current_layout = NULL; }
-                if (g_current_dom) { node_free(g_current_dom); g_current_dom = NULL; }
-
-                g_current_dom = html_parse(res->data);
-                if (g_current_dom) {
-                    loader_fetch_resources(g_current_dom, g_current_url); // TODO: Form might have changed URL
-                    style_compute(g_current_dom);
-                    RECT rect;
-                    GetClientRect(hContent, &rect);
-                    g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
-                    
-                    // Add to history
-                    history_add(g_history, g_current_url, "Form Result");
-                    
-                    InvalidateRect(hContent, NULL, TRUE);
-                }
+            char target_url[2048];
+            network_response_t *res = form_submit(node, g_current_url, target_url, sizeof(target_url));
+            if (res) {
+                ProcessNewContent(hContent, res, target_url);
                 network_response_free(res);
             }
         }
