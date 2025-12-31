@@ -166,7 +166,7 @@ static void set_color_from_style(HDC hdc, style_t *style) {
     SetTextColor(hdc, RGB(r, g, b));
 }
 
-static void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, int h) {
+void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, int h) {
     if (!data || size == 0) return;
 
     HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);

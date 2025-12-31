@@ -30,6 +30,7 @@
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
 static void Navigate(HWND hwnd, const char *url);
 static void HandleClick(HWND hwnd, int x, int y);
@@ -111,6 +112,20 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         return FALSE;
     }
 
+    // Register History Window Class
+    const char historyClassName[] = "Gem32HistoryClass";
+    WNDCLASS whc = {0};
+    whc.lpfnWndProc = HistoryWndProc;
+    whc.hInstance = hInstance;
+    whc.lpszClassName = historyClassName;
+    whc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    whc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+
+    if (!RegisterClass(&whc)) {
+        LOG_ERROR("Failed to register history window class");
+        return FALSE;
+    }
+
     HWND hwnd = CreateWindowEx(
         0,
         className,
@@ -149,6 +164,84 @@ static void LoaderProgressCallback(int current, int total, void *ctx) {
     while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
+    }
+}
+
+static void FetchFavicon(history_node_t *node) {
+    if (!node || !node->url) return;
+    
+    URL_COMPONENTS urlComp = {0};
+    urlComp.dwStructSize = sizeof(urlComp);
+    char host[256] = {0};
+    urlComp.lpszHostName = host;
+    urlComp.dwHostNameLength = sizeof(host);
+    urlComp.dwSchemeLength = 1;
+
+    if (!InternetCrackUrl(node->url, 0, 0, &urlComp)) return;
+
+    if (urlComp.nScheme == INTERNET_SCHEME_GEMINI) return;
+
+    char favicon_url[2048];
+    snprintf(favicon_url, sizeof(favicon_url), "%s://%s/favicon.ico", 
+             (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? "https" : "http", host);
+
+    network_response_t *res = network_fetch(favicon_url);
+    if (res && res->data && res->size > 0) {
+        history_node_set_favicon(node, res->data, res->size);
+        res->data = NULL;
+    }
+    if (res) network_response_free(res);
+}
+
+static void DrawHistoryTree(HDC hdc, history_node_t *node, int *x, int y) {
+    if (!node) return;
+    
+    int iconSize = 16;
+    int spacing = 24;
+    int curX = *x;
+
+    if (node->favicon_data) {
+        render_image_data(hdc, node->favicon_data, node->favicon_size, curX, y, iconSize, iconSize);
+    } else {
+        // Draw a globe-ish circle for Gemini or missing icons
+        HBRUSH hBrush = CreateSolidBrush(RGB(100, 150, 255));
+        HBRUSH oldBrush = SelectObject(hdc, hBrush);
+        Ellipse(hdc, curX, y, curX + iconSize, y + iconSize);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(hBrush);
+    }
+
+    if (node == g_history->current) {
+        HPEN hPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+        HPEN oldPen = SelectObject(hdc, hPen);
+        HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, curX - 2, y - 2, curX + iconSize + 2, y + iconSize + 2);
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(hPen);
+    }
+
+    *x += spacing;
+
+    for (int i = 0; i < node->children_count; i++) {
+        DrawHistoryTree(hdc, node->children[i], x, y);
+    }
+}
+
+static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+            if (g_history && g_history->root) {
+                int x = 10;
+                DrawHistoryTree(hdc, g_history->root, &x, 10);
+            }
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 }
 
@@ -216,6 +309,8 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
         UpdateScrollBars(hContent);
 
         history_add(g_history, url, "Title Placeholder");
+        FetchFavicon(g_history->current);
+        InvalidateRect(GetDlgItem(hMain, ID_HISTORY), NULL, TRUE);
     }
 
     // Stop Animation, Hide Loading, Show Content
@@ -440,7 +535,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CreateWindow(PROGRESS_CLASS, NULL, WS_CHILD | WS_VISIBLE | PBS_SMOOTH, 10, 120, 280, 20, hLoading, (HMENU)ID_PROG_CTRL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 
             CreateWindow("Gem32ContentClass", NULL, WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL, 0, 0, 0, 0, hwnd, (HMENU)ID_CONTENT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-            CreateWindow("STATIC", "Git-Style History Tree", WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER, 0, 0, 0, 0, hwnd, (HMENU)ID_HISTORY, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+                        CreateWindow(
+                            "Gem32HistoryClass", NULL,
+                            WS_VISIBLE | WS_CHILD | WS_BORDER,
+                            0, 0, 0, 0,
+                            hwnd, (HMENU)ID_HISTORY,
+                            ((LPCREATESTRUCT)lParam)->hInstance, NULL
+                        );
             break;
         }
         case WM_COMMAND:

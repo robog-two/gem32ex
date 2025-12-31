@@ -7,8 +7,17 @@ history_node_t* history_node_create(const char *url, const char *title) {
     if (node) {
         node->url = strdup(url);
         node->title = title ? strdup(title) : strdup(url);
+        node->favicon_data = NULL;
+        node->favicon_size = 0;
     }
     return node;
+}
+
+void history_node_set_favicon(history_node_t *node, void *data, size_t size) {
+    if (!node) return;
+    if (node->favicon_data) free(node->favicon_data);
+    node->favicon_data = data;
+    node->favicon_size = size;
 }
 
 history_tree_t* history_create() {
@@ -40,6 +49,7 @@ void history_node_free(history_node_t *node) {
     }
     free(node->url);
     free(node->title);
+    if (node->favicon_data) free(node->favicon_data);
     free(node->children);
     free(node);
 }
