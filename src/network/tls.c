@@ -164,7 +164,11 @@ tls_connection_t* tls_connect(const char *host, int port) {
 
     SCHANNEL_CRED schannelCred = {0};
     schannelCred.dwVersion = SCHANNEL_CRED_VERSION;
+    // Explicitly enable TLS 1.0, 1.1 and 1.2
     schannelCred.grbitEnabledProtocols = SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT;
+    
+    // SCH_CRED_NO_DEFAULT_CREDS: Don't use current user's certs
+    // SCH_CRED_MANUAL_CRED_VALIDATION: We'll check certs later if needed, avoids some early fails
     schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION;
 
     if (conn->pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &conn->hCreds, NULL) != SEC_E_OK) {
@@ -172,6 +176,8 @@ tls_connection_t* tls_connect(const char *host, int port) {
         closesocket(conn->socket); free(conn); return NULL;
     }
 
+    // On Windows XP, the 3rd parameter to InitializeSecurityContext (szHostName) 
+    // is used for SNI if the system has the right updates.
     SECURITY_STATUS sc = PerformHandshake(conn->socket, conn->pSSPI, &conn->hCreds, host, &conn->hContext, &conn->extra_data, &conn->extra_data_len);
     if (sc != SEC_E_OK) {
         LOG_ERROR("PerformHandshake failed: 0x%lx", sc);

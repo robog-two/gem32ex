@@ -30,8 +30,12 @@ static void log_last_error(const char *context) {
 }
 
 static network_response_t* https_fetch_raw(const char *host, int port, const char *path, const char *method, const char *body, const char *content_type) {
+    LOG_INFO("HTTPS Tunneling: %s:%d%s", host, port, path);
     tls_connection_t *conn = tls_connect(host, port);
-    if (!conn) return NULL;
+    if (!conn) {
+        LOG_ERROR("HTTPS Tunneling: TLS connection failed to %s", host);
+        return NULL;
+    }
 
     char request[4096];
     int req_len = snprintf(request, sizeof(request), 
@@ -51,7 +55,10 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
     strcat(request, "\r\n");
     req_len += 2;
 
+    LOG_DEBUG("HTTPS Request:\n%s", request);
+
     if (tls_send(conn, request, req_len) < 0) {
+        LOG_ERROR("HTTPS Tunneling: Failed to send request");
         tls_close(conn);
         return NULL;
     }
@@ -67,6 +74,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
     char *data = NULL;
 
     while ((received = tls_recv(conn, buffer, 65535)) > 0) {
+        LOG_DEBUG("HTTPS Received %d bytes", received);
         char *new_data = realloc(data, total_received + received + 1);
         if (!new_data) break;
         data = new_data;
@@ -78,6 +86,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
     tls_close(conn);
 
     if (data) {
+        LOG_INFO("HTTPS Data received: %d bytes total", total_received);
         // Simple HTTP parser
         char *header_end = strstr(data, "\r\n\r\n");
         if (header_end) {
@@ -90,6 +99,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                 char *status_code_ptr = strchr(data, ' ');
                 if (status_code_ptr) {
                     res->status_code = atoi(status_code_ptr + 1);
+                    LOG_INFO("HTTPS Response Status: %d", res->status_code);
                 }
             }
 
@@ -102,6 +112,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                     res->content_type = malloc(ct_len + 1);
                     memcpy(res->content_type, ct, ct_len);
                     res->content_type[ct_len] = '\0';
+                    LOG_DEBUG("HTTPS Content-Type: %s", res->content_type);
                 }
             }
 
@@ -111,12 +122,12 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                 char *loc_end = strstr(loc, "\r\n");
                 if (loc_end) {
                     int loc_len = (int)(loc_end - loc);
-                    // For redirects, we might put the target in data
                     if (res->status_code >= 300 && res->status_code <= 308) {
                         res->data = malloc(loc_len + 1);
                         memcpy(res->data, loc, loc_len);
                         res->data[loc_len] = '\0';
                         res->size = loc_len;
+                        LOG_INFO("HTTPS Redirect Location: %s", res->data);
                     }
                 }
             }
@@ -128,8 +139,12 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                 res->data[body_len] = '\0';
                 res->size = body_len;
             }
+        } else {
+            LOG_WARN("HTTPS Response: Could not find end of headers");
         }
         free(data);
+    } else {
+        LOG_ERROR("HTTPS Tunneling: No data received");
     }
 
     return res;
