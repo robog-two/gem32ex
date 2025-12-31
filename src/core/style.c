@@ -280,9 +280,18 @@ void style_compute(node_t *node) {
             else if (strcasecmp(attr->value, "left") == 0) style->text_align = TEXT_ALIGN_LEFT;
         } else if (strcasecmp(attr->name, "width") == 0 && attr->value) {
             style->width = atoi(attr->value);
-        } else if (strcasecmp(attr->name, "size") == 0 && attr->value && 
-                   node->tag_name && strcasecmp(node->tag_name, "input") == 0) {
-            style->width = atoi(attr->value) * 8 + 10; // Approx 8px per char + some padding
+        } else if (strcasecmp(attr->name, "size") == 0 && attr->value) {
+            if (node->tag_name && strcasecmp(node->tag_name, "input") == 0) {
+                style->width = atoi(attr->value) * 8 + 10; // Approx 8px per char + some padding
+            } else if (node->tag_name && strcasecmp(node->tag_name, "font") == 0) {
+                // HTML font size attribute: 1-7 scale (traditional HTML)
+                // Based on legacy browser behavior where 3=normal (16px)
+                int size = atoi(attr->value);
+                const int font_sizes[] = {10, 13, 16, 18, 24, 32, 48}; // 1 to 7
+                if (size >= 1 && size <= 7) {
+                    style->font_size = font_sizes[size - 1];
+                }
+            }
         } else if (strcasecmp(attr->name, "height") == 0 && attr->value) {
             style->height = atoi(attr->value);
         } else if (strcasecmp(attr->name, "border") == 0 && attr->value) {

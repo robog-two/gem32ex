@@ -246,17 +246,34 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     if (has_block_children) {
         layout_box_t *child = box->first_child;
         int prev_margin_bottom = 0;
+        int is_first_child = 1;
         while (child) {
             if (child->node->style->display == DISPLAY_NONE) { child = child->next_sibling; continue; }
             int collapse = 0;
             if (is_block(child->node)) {
                 int cur_mt = child->node->style->margin_top;
+                // Collapse with previous sibling's bottom margin
                 collapse = (cur_mt > prev_margin_bottom) ? cur_mt : prev_margin_bottom;
-                if (child == box->first_child) collapse = cur_mt;
+                // First child: only add margin if parent has padding/border (which prevents collapse)
+                if (is_first_child) {
+                    // If parent has top padding or border, don't collapse through
+                    if (pt > 0 || bw > 0) {
+                        collapse = cur_mt;
+                    } else {
+                        // Margin collapses through - don't add it to child_y
+                        collapse = 0;
+                    }
+                }
                 child_y += collapse;
+                is_first_child = 0;
             }
-            constraint_space_t child_space = {box->fragment.content_box.width, 0, 1, 0};
-            
+            // Calculate available width for child, subtracting horizontal margins
+            int child_available_width = box->fragment.content_box.width;
+            if (is_block(child->node)) {
+                child_available_width -= (child->node->style->margin_left + child->node->style->margin_right);
+            }
+            constraint_space_t child_space = {child_available_width, 0, 1, 0};
+
             // Set child position relative to THIS box
             // child->x = content_left + margin_left
             if (is_block(child->node)) {
@@ -265,13 +282,17 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
                  child->fragment.border_box.x = box->fragment.content_box.x; // Wrapped in anon block conceptually
             }
             child->fragment.border_box.y = child_y;
-            
+
             layout_compute(child, child_space);
             child_y += child->fragment.border_box.height;
             if (is_block(child->node)) prev_margin_bottom = child->node->style->margin_bottom;
             child = child->next_sibling;
         }
-        child_y += prev_margin_bottom;
+        // Last child's bottom margin: only add if parent has bottom padding or border
+        // Otherwise it collapses through the parent
+        if (pb > 0 || bw > 0) {
+            child_y += prev_margin_bottom;
+        }
     } else {
         layout_inline_children(box, space, &child_y);
         
