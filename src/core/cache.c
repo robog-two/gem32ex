@@ -103,12 +103,12 @@ void* cache_get_image(const char *url, size_t *out_size) {
 
     if (read != (size_t)size) {
         free(data);
-        LOG_WARN("Cache read mismatch: expected %ld, got %zu", size, read);
+        LOG_WARN("Cache read mismatch: expected %ld, got %lu", size, (unsigned long)read);
         return NULL;
     }
 
     *out_size = size;
-    LOG_DEBUG("Cache hit: %s (%zu bytes)", url, size);
+    LOG_DEBUG("Cache hit: %s (%lu bytes)", url, (unsigned long)size);
     return data;
 }
 
@@ -132,11 +132,11 @@ int cache_put_image(const char *url, const void *data, size_t size) {
     fclose(f);
 
     if (written != size) {
-        LOG_WARN("Cache write mismatch: expected %zu, wrote %zu", size, written);
+        LOG_WARN("Cache write mismatch: expected %lu, wrote %lu", (unsigned long)size, (unsigned long)written);
         return 0;
     }
 
-    LOG_DEBUG("Cached image: %s (%zu bytes)", url, size);
+    LOG_DEBUG("Cached image: %s (%lu bytes)", url, (unsigned long)size);
     return 1;
 }
 
