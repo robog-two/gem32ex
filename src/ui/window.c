@@ -1,6 +1,12 @@
 #include "window.h"
 #include <commctrl.h>
 #include <stdio.h>
+#include "network/http.h"
+#include "core/html.h"
+#include "core/style.h"
+#include "core/layout.h"
+#include "ui/history.h"
+#include "ui/bookmarks.h"
 
 #define ID_BTN_STAR 101
 #define ID_EDIT_URL 102
@@ -13,8 +19,12 @@
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
+static void Navigate(HWND hwnd, const char *url);
+
+static history_tree_t *g_history = NULL;
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
+    g_history = history_create();
     const char className[] = "Gem32BrowserClass";
 
     WNDCLASS wc = {0};
@@ -49,6 +59,23 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     return TRUE;
 }
 
+static void Navigate(HWND hwnd, const char *url) {
+    network_response_t *res = http_fetch(url);
+    if (res && res->data) {
+        node_t *dom = html_parse(res->data);
+        if (dom) {
+            style_compute(dom);
+            // Layout and render would happen here in a full implementation
+            history_add(g_history, url, "Title Placeholder");
+            SetWindowText(GetDlgItem(hwnd, ID_CONTENT), "Page Loaded Successfully");
+            node_free(dom);
+        }
+        network_response_free(res);
+    } else {
+        MessageBox(hwnd, "Failed to fetch URL", "Error", MB_ICONERROR);
+    }
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE:
@@ -56,7 +83,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             CreateWindow(
                 "BUTTON", "*",
                 WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                0, 0, 0, 0, // Sized in WM_SIZE
+                0, 0, 0, 0,
                 hwnd, (HMENU)ID_BTN_STAR,
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
@@ -79,7 +106,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
 
-            // Content Area (White background static for now)
+            // Content Area
             CreateWindow(
                 "STATIC", "Content Area",
                 WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER,
@@ -88,7 +115,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
 
-            // History Tree Area (Gray background static for now)
+            // History Tree Area
             CreateWindow(
                 "STATIC", "Git-Style History Tree",
                 WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER,
@@ -96,6 +123,19 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 hwnd, (HMENU)ID_HISTORY,
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
+            break;
+
+        case WM_COMMAND:
+            if (LOWORD(wParam) == ID_BTN_GO) {
+                char url[1024];
+                GetWindowText(GetDlgItem(hwnd, ID_EDIT_URL), url, sizeof(url));
+                Navigate(hwnd, url);
+            } else if (LOWORD(wParam) == ID_BTN_STAR) {
+                char url[1024];
+                GetWindowText(GetDlgItem(hwnd, ID_EDIT_URL), url, sizeof(url));
+                bookmark_add(url, "Bookmark Title");
+                MessageBox(hwnd, "Bookmarked!", "Success", MB_OK);
+            }
             break;
 
         case WM_SIZE:
@@ -121,7 +161,6 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
     int btnSize = TOP_BAR_HEIGHT;
     int urlX = btnSize;
     int urlWidth = width - (btnSize * 2); 
-    // Layout: [Star] [URL] [Go]
     
     HWND hStar = GetDlgItem(hwnd, ID_BTN_STAR);
     HWND hUrl = GetDlgItem(hwnd, ID_EDIT_URL);
