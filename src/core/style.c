@@ -15,13 +15,37 @@ void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
     if (node->type == DOM_NODE_ELEMENT) {
-        if (strcasecmp(node->tag_name, "div") == 0 ||
-            strcasecmp(node->tag_name, "p") == 0 ||
-            strcasecmp(node->tag_name, "h1") == 0 ||
-            strcasecmp(node->tag_name, "h2") == 0 ||
-            strcasecmp(node->tag_name, "h3") == 0 ||
-            strcasecmp(node->tag_name, "ul") == 0 ||
-            strcasecmp(node->tag_name, "li") == 0) {
+        if (strcasecmp(node->tag_name, "body") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+            node->style->margin_top = 8;
+            node->style->margin_bottom = 8;
+            node->style->margin_left = 8;
+            node->style->margin_right = 8;
+        } else if (strcasecmp(node->tag_name, "div") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+        } else if (strcasecmp(node->tag_name, "p") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+            node->style->margin_top = 16;
+            node->style->margin_bottom = 16;
+        } else if (strcasecmp(node->tag_name, "h1") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+            node->style->margin_top = 22;
+            node->style->margin_bottom = 22;
+            // Simplistic font size handling via custom property or just height assumption later
+        } else if (strcasecmp(node->tag_name, "h2") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+            node->style->margin_top = 20;
+            node->style->margin_bottom = 20;
+        } else if (strcasecmp(node->tag_name, "h3") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+            node->style->margin_top = 18;
+            node->style->margin_bottom = 18;
+        } else if (strcasecmp(node->tag_name, "ul") == 0) {
+            node->style->display = DISPLAY_BLOCK;
+            node->style->margin_top = 16;
+            node->style->margin_bottom = 16;
+            node->style->padding_left = 40;
+        } else if (strcasecmp(node->tag_name, "li") == 0) {
             node->style->display = DISPLAY_BLOCK;
         } else if (strcasecmp(node->tag_name, "table") == 0) {
             node->style->display = DISPLAY_TABLE;
