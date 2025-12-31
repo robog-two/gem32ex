@@ -222,6 +222,9 @@ void style_compute(node_t *node) {
             style->display = DISPLAY_INLINE;
             style->color = 0x0000FF; // Blue
             style->text_decoration = TEXT_DECORATION_UNDERLINE;
+        } else if (strcasecmp(node->tag_name, "font") == 0 ||
+                   strcasecmp(node->tag_name, "span") == 0) {
+            style->display = DISPLAY_INLINE;
         } else if (strcasecmp(node->tag_name, "b") == 0 ||
                    strcasecmp(node->tag_name, "strong") == 0) {
             style->display = DISPLAY_INLINE;
