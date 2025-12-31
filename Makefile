@@ -5,7 +5,7 @@ CFLAGS = -std=c99 -Wall -Wextra -Isrc -D_WIN32_WINNT=0x0501
 LDFLAGS = -static -static-libgcc -mwindows -lssl -lcrypto -lws2_32 -lcrypt32 -lgdi32 -ladvapi32 -luser32 -lcomctl32 -lwininet -lole32 -loleaut32 -luuid -lz
 
 CORE_SRC = src/core/dom.c src/core/html.c src/core/style.c src/core/layout.c src/core/log.c
-SRC = src/main.c src/ui/window.c src/ui/history.c src/ui/bookmarks.c src/ui/render.c src/ui/form.c src/network/http.c src/network/gemini.c src/network/loader.c src/network/protocol.c src/network/tls.c $(CORE_SRC)
+SRC = src/main.c src/ui/window.c src/ui/history.c src/ui/history_ui.c src/ui/bookmarks.c src/ui/render.c src/ui/form.c src/network/http.c src/network/gemini.c src/network/loader.c src/network/protocol.c src/network/tls.c $(CORE_SRC)
 OBJ = $(SRC:.c=.o)
 TARGET = gem32.exe
 .PHONY: all clean test
