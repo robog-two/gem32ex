@@ -6,7 +6,10 @@
 typedef enum {
     DISPLAY_BLOCK,
     DISPLAY_INLINE,
-    DISPLAY_NONE
+    DISPLAY_NONE,
+    DISPLAY_TABLE,
+    DISPLAY_TABLE_ROW,
+    DISPLAY_TABLE_CELL
 } display_t;
 
 typedef struct {
@@ -19,6 +22,10 @@ typedef struct {
     display_t display;
 } style_t;
 
+struct node_s;
+typedef struct node_s node_t;
+
 void style_init_default(style_t *style);
+void style_compute(node_t *node);
 
 #endif // STYLE_H

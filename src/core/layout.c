@@ -28,17 +28,36 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
                                      box->node->style->padding_left + box->node->style->padding_right);
 
     int current_y = box->dimensions.y;
+    int current_x = box->dimensions.x;
     int max_h = 0;
+
+    // Count cells if it's a table row
+    int cell_count = 0;
+    if (box->node->style->display == DISPLAY_TABLE_ROW) {
+        layout_box_t *child = box->first_child;
+        while (child) {
+            if (child->node->style->display == DISPLAY_TABLE_CELL) cell_count++;
+            child = child->next_sibling;
+        }
+    }
 
     layout_box_t *child = box->first_child;
     while (child) {
-        // Very simple: treat everything as block for now
-        layout_calculate_positions(child, box->dimensions.x, current_y, box->dimensions.width);
-        current_y += child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom;
+        if (box->node->style->display == DISPLAY_TABLE_ROW && child->node->style->display == DISPLAY_TABLE_CELL) {
+            int cell_width = box->dimensions.width / (cell_count > 0 ? cell_count : 1);
+            layout_calculate_positions(child, current_x, box->dimensions.y, cell_width);
+            current_x += cell_width;
+            if (child->dimensions.height > max_h) max_h = child->dimensions.height;
+        } else {
+            layout_calculate_positions(child, box->dimensions.x, current_y, box->dimensions.width);
+            current_y += child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom;
+        }
         child = child->next_sibling;
     }
 
-    if (box->node->style->height > 0) {
+    if (box->node->style->display == DISPLAY_TABLE_ROW) {
+        box->dimensions.height = max_h;
+    } else if (box->node->style->height > 0) {
         box->dimensions.height = box->node->style->height;
     } else {
         box->dimensions.height = current_y - box->dimensions.y;

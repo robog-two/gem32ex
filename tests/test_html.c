@@ -17,9 +17,10 @@ void print_layout(layout_box_t *box, int depth) {
 }
 
 int main() {
-    const char *html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
+    const char *html = "<html><body><table><tr><td>Cell 1</td><td>Cell 2</td></tr></table></body></html>";
     node_t *dom = html_parse(html);
     if (dom) {
+        style_compute(dom);
         layout_box_t *layout = layout_create_tree(dom, 800);
         if (layout) {
             print_layout(layout, 0);
