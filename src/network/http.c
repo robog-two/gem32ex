@@ -1,23 +1,11 @@
 #include "http.h"
+#include "tls.h"
 #include "core/log.h"
 #include <windows.h>
 #include <wininet.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-#ifndef INTERNET_OPTION_SECURITY_PROTOCOLS
-#define INTERNET_OPTION_SECURITY_PROTOCOLS 31
-#endif
-#ifndef SP_PROT_TLS1_1_CLIENT
-#define SP_PROT_TLS1_1_CLIENT 0x00000200
-#endif
-#ifndef SP_PROT_TLS1_2_CLIENT
-#define SP_PROT_TLS1_2_CLIENT 0x00000800
-#endif
-#ifndef INTERNET_FLAG_IGNORE_REVOCATION
-#define INTERNET_FLAG_IGNORE_REVOCATION 0x00000080
-#endif
 
 static void log_last_error(const char *context) {
     DWORD err = GetLastError();
@@ -32,7 +20,6 @@ static void log_last_error(const char *context) {
         NULL
     );
     if (len > 0) {
-        // Remove trailing newlines
         while (len > 0 && (buffer[len-1] == '\r' || buffer[len-1] == '\n')) {
             buffer[--len] = '\0';
         }
@@ -42,30 +29,120 @@ static void log_last_error(const char *context) {
     }
 }
 
-static network_response_t* perform_http_request(const char *url, const char *method, const char *body, const char *content_type) {
-    LOG_INFO("HTTP %s %s", method, url);
+static network_response_t* https_fetch_raw(const char *host, int port, const char *path, const char *method, const char *body, const char *content_type) {
+    tls_connection_t *conn = tls_connect(host, port);
+    if (!conn) return NULL;
 
-    HINTERNET hInternet = InternetOpen("Gem32Browser/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
-    if (!hInternet) {
-        log_last_error("InternetOpen");
+    char request[4096];
+    int req_len = snprintf(request, sizeof(request), 
+        "%s %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "User-Agent: Gem32Browser/1.0\r\n"
+        "Accept: */*\r\n"
+        "Connection: close\r\n",
+        method, path, host);
+
+    if (body && content_type) {
+        req_len += snprintf(request + req_len, sizeof(request) - req_len,
+            "Content-Type: %s\r\n"
+            "Content-Length: %zu\r\n",
+            content_type, strlen(body));
+    }
+    strcat(request, "\r\n");
+    req_len += 2;
+
+    if (tls_send(conn, request, req_len) < 0) {
+        tls_close(conn);
         return NULL;
     }
 
-    // Enable TLS 1.1 and 1.2 if possible (XP POSReady 2009 updates)
-    DWORD protocols = INTERNET_FLAG_SECURE_PROTOCOL_SSL2 | 
-                      INTERNET_FLAG_SECURE_PROTOCOL_SSL3 | 
-                      INTERNET_FLAG_SECURE_PROTOCOL_TLS1 |
-                      SP_PROT_TLS1_1_CLIENT |
-                      SP_PROT_TLS1_2_CLIENT;
-    InternetSetOption(hInternet, INTERNET_OPTION_SECURITY_PROTOCOLS, &protocols, sizeof(protocols));
+    if (body) {
+        tls_send(conn, body, (int)strlen(body));
+    }
+
+    network_response_t *res = calloc(1, sizeof(network_response_t));
+    char *buffer = malloc(65536);
+    int received;
+    int total_received = 0;
+    char *data = NULL;
+
+    while ((received = tls_recv(conn, buffer, 65535)) > 0) {
+        char *new_data = realloc(data, total_received + received + 1);
+        if (!new_data) break;
+        data = new_data;
+        memcpy(data + total_received, buffer, received);
+        total_received += received;
+        data[total_received] = '\0';
+    }
+    free(buffer);
+    tls_close(conn);
+
+    if (data) {
+        // Simple HTTP parser
+        char *header_end = strstr(data, "\r\n\r\n");
+        if (header_end) {
+            *header_end = '\0';
+            char *body_start = header_end + 4;
+            
+            char *first_line_end = strstr(data, "\r\n");
+            if (first_line_end) {
+                *first_line_end = '\0';
+                char *status_code_ptr = strchr(data, ' ');
+                if (status_code_ptr) {
+                    res->status_code = atoi(status_code_ptr + 1);
+                }
+            }
+
+            char *ct = strstr(data, "Content-Type: ");
+            if (ct) {
+                ct += 14;
+                char *ct_end = strstr(ct, "\r\n");
+                if (ct_end) {
+                    int ct_len = (int)(ct_end - ct);
+                    res->content_type = malloc(ct_len + 1);
+                    memcpy(res->content_type, ct, ct_len);
+                    res->content_type[ct_len] = '\0';
+                }
+            }
+
+            char *loc = strstr(data, "Location: ");
+            if (loc) {
+                loc += 10;
+                char *loc_end = strstr(loc, "\r\n");
+                if (loc_end) {
+                    int loc_len = (int)(loc_end - loc);
+                    // For redirects, we might put the target in data
+                    if (res->status_code >= 300 && res->status_code <= 308) {
+                        res->data = malloc(loc_len + 1);
+                        memcpy(res->data, loc, loc_len);
+                        res->data[loc_len] = '\0';
+                        res->size = loc_len;
+                    }
+                }
+            }
+
+            if (!res->data) {
+                size_t body_len = total_received - (body_start - data);
+                res->data = malloc(body_len + 1);
+                memcpy(res->data, body_start, body_len);
+                res->data[body_len] = '\0';
+                res->size = body_len;
+            }
+        }
+        free(data);
+    }
+
+    return res;
+}
+
+static network_response_t* perform_http_request(const char *url, const char *method, const char *body, const char *content_type) {
+    LOG_INFO("HTTP %s %s", method, url);
 
     URL_COMPONENTS urlComp = {0};
     urlComp.dwStructSize = sizeof(urlComp);
-    
     char host[256] = {0};
     char path[2048] = {0};
     char extra[1024] = {0};
-    
     urlComp.lpszHostName = host;
     urlComp.dwHostNameLength = sizeof(host);
     urlComp.lpszUrlPath = path;
@@ -76,149 +153,72 @@ static network_response_t* perform_http_request(const char *url, const char *met
 
     if (!InternetCrackUrl(url, 0, 0, &urlComp)) {
         log_last_error("InternetCrackUrl");
-        InternetCloseHandle(hInternet);
         return NULL;
     }
 
-    // Combine path and extra info (query params)
     char full_path[3072];
     strncpy(full_path, path, sizeof(full_path)-1);
-    if (strlen(extra) > 0) {
-        strncat(full_path, extra, sizeof(full_path) - strlen(full_path) - 1);
-    }
+    if (strlen(extra) > 0) strncat(full_path, extra, sizeof(full_path) - strlen(full_path) - 1);
     if (strlen(full_path) == 0) strcpy(full_path, "/");
 
-    LOG_DEBUG("Connecting to %s:%d (Scheme: %d)", host, urlComp.nPort, urlComp.nScheme);
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
+        return https_fetch_raw(host, urlComp.nPort, full_path, method, body, content_type);
+    }
+
+    HINTERNET hInternet = InternetOpen("Gem32Browser/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    if (!hInternet) { log_last_error("InternetOpen"); return NULL; }
 
     HINTERNET hConnect = InternetConnect(hInternet, host, urlComp.nPort, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    if (!hConnect) {
-        log_last_error("InternetConnect");
-        InternetCloseHandle(hInternet);
-        return NULL;
-    }
+    if (!hConnect) { log_last_error("InternetConnect"); InternetCloseHandle(hInternet); return NULL; }
 
-    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_KEEP_CONNECTION;
-    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
-        flags |= INTERNET_FLAG_SECURE;
-        flags |= INTERNET_FLAG_IGNORE_CERT_CN_INVALID;
-        flags |= INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
-        flags |= INTERNET_FLAG_IGNORE_REVOCATION;
-    }
-
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES;
     const char *accept[] = {"*/*", NULL};
     HINTERNET hRequest = HttpOpenRequest(hConnect, method, full_path, NULL, NULL, accept, flags, 0);
-    if (!hRequest) {
-        log_last_error("HttpOpenRequest");
-        InternetCloseHandle(hConnect);
-        InternetCloseHandle(hInternet);
-        return NULL;
-    }
-
-    // Extra security flags for the request handle
-    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
-        DWORD securityFlags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | 
-                             SECURITY_FLAG_IGNORE_CERT_DATE_INVALID | 
-                             SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
-                             SECURITY_FLAG_IGNORE_WRONG_USAGE;
-        InternetSetOption(hRequest, INTERNET_OPTION_SECURITY_FLAGS, &securityFlags, sizeof(securityFlags));
-    }
+    if (!hRequest) { log_last_error("HttpOpenRequest"); InternetCloseHandle(hConnect); InternetCloseHandle(hInternet); return NULL; }
 
     const char *headers = NULL;
     DWORD headersLen = 0;
     char headerBuf[256];
-    
     if (body && content_type) {
         snprintf(headerBuf, sizeof(headerBuf), "Content-Type: %s\r\n", content_type);
         headers = headerBuf;
         headersLen = (DWORD)strlen(headers);
     }
 
-    if (body) LOG_DEBUG("HTTP Body: %s", body);
-
     if (!HttpSendRequest(hRequest, headers, headersLen, (LPVOID)body, body ? (DWORD)strlen(body) : 0)) {
         log_last_error("HttpSendRequest");
-        InternetCloseHandle(hRequest);
-        InternetCloseHandle(hConnect);
-        InternetCloseHandle(hInternet);
+        InternetCloseHandle(hRequest); InternetCloseHandle(hConnect); InternetCloseHandle(hInternet);
         return NULL;
     }
 
     network_response_t *res = calloc(1, sizeof(network_response_t));
-    if (!res) {
-        InternetCloseHandle(hRequest);
-        InternetCloseHandle(hConnect);
-        InternetCloseHandle(hInternet);
-        return NULL;
-    }
-
-    char buffer[4096];
+    char buf[4096];
     DWORD bytesRead;
     size_t totalSize = 0;
 
-    while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+    while (InternetReadFile(hRequest, buf, sizeof(buf), &bytesRead) && bytesRead > 0) {
         char *newData = realloc(res->data, totalSize + bytesRead + 1);
-        if (!newData) {
-            network_response_free(res);
-            InternetCloseHandle(hRequest);
-            InternetCloseHandle(hConnect);
-            InternetCloseHandle(hInternet);
-            return NULL;
-        }
+        if (!newData) break;
         res->data = newData;
-        memcpy(res->data + totalSize, buffer, bytesRead);
+        memcpy(res->data + totalSize, buf, bytesRead);
         totalSize += bytesRead;
         res->data[totalSize] = '\0';
     }
-
     res->size = totalSize;
 
-    // Get Content-Type
     char ctBuffer[256];
     DWORD ctSize = sizeof(ctBuffer);
     DWORD index = 0;
-    if (HttpQueryInfo(hRequest, HTTP_QUERY_CONTENT_TYPE, ctBuffer, &ctSize, &index)) {
-        res->content_type = strdup(ctBuffer);
-    }
+    if (HttpQueryInfo(hRequest, HTTP_QUERY_CONTENT_TYPE, ctBuffer, &ctSize, &index)) res->content_type = strdup(ctBuffer);
 
-    // Get Status Code
     DWORD statusCode = 0;
     DWORD scSize = sizeof(statusCode);
     index = 0;
-    if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &scSize, &index)) {
-        res->status_code = (int)statusCode;
-        LOG_INFO("HTTP Response Status: %d", res->status_code);
-    }
+    if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &scSize, &index)) res->status_code = (int)statusCode;
 
-    // Get Final URL (WinInet might have followed redirects)
-    char finalUrl[2048];
-    DWORD fuSize = sizeof(finalUrl);
-    if (InternetQueryOption(hRequest, INTERNET_OPTION_URL, finalUrl, &fuSize)) {
-        res->final_url = strdup(finalUrl);
-    }
-
-    // If it's a redirect and we didn't follow it (or it's a cross-protocol one WinInet won't do)
-    if (res->status_code >= 300 && res->status_code <= 308) {
-        char locBuffer[2048];
-        DWORD locSize = sizeof(locBuffer);
-        index = 0;
-        if (HttpQueryInfo(hRequest, HTTP_QUERY_LOCATION, locBuffer, &locSize, &index)) {
-            // Store redirect location in data if body is empty, or handle in protocol.c
-            res->data = strdup(locBuffer);
-            res->size = strlen(locBuffer);
-        }
-    }
-
-    InternetCloseHandle(hRequest);
-    InternetCloseHandle(hConnect);
-    InternetCloseHandle(hInternet);
-
+    InternetCloseHandle(hRequest); InternetCloseHandle(hConnect); InternetCloseHandle(hInternet);
     return res;
 }
 
-network_response_t* http_fetch(const char *url) {
-    return perform_http_request(url, "GET", NULL, NULL);
-}
-
-network_response_t* http_post(const char *url, const char *body, const char *content_type) {
-    return perform_http_request(url, "POST", body, content_type);
-}
+network_response_t* http_fetch(const char *url) { return perform_http_request(url, "GET", NULL, NULL); }
+network_response_t* http_post(const char *url, const char *body, const char *content_type) { return perform_http_request(url, "POST", body, content_type); }
