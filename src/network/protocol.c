@@ -6,6 +6,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+void network_response_free(network_response_t *res) {
+    if (res) {
+        if (res->data) free(res->data);
+        if (res->content_type) free(res->content_type);
+        if (res->final_url) free(res->final_url);
+        free(res);
+    }
+}
+
 // Mock for now, in a real implementation this would show a dialog
 static char* platform_input_prompt(const char *prompt) {
     // Return NULL or a mock string to test logic
