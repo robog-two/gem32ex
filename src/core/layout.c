@@ -321,3 +321,43 @@ layout_box_t* layout_create_tree(node_t *root, int container_width) {
     }
     return box;
 }
+
+// Hit Testing
+layout_box_t* layout_hit_test(layout_box_t *root, int x, int y) {
+    if (!root) return NULL;
+    
+    // Check if point is inside root's border box
+    // Note: root positions are typically relative to parent. 
+    // This function assumes x, y are local to 'root's parent coordinate space'.
+    // BUT for recursion, we want to transform x, y to be local to 'root'.
+    
+    if (x >= root->fragment.border_box.x && 
+        x < root->fragment.border_box.x + root->fragment.border_box.width &&
+        y >= root->fragment.border_box.y &&
+        y < root->fragment.border_box.y + root->fragment.border_box.height) {
+        
+        // Point is inside this box. Check children.
+        // Transform x, y to local coordinates
+        int local_x = x - root->fragment.border_box.x;
+        int local_y = y - root->fragment.border_box.y;
+        
+        // Iterate children (reverse order usually better for Z-index, but we have flat list)
+        // We'll just iterate forward and return the *last* match (effectively top-most in simple flow).
+        // Actually, creating a temporary list to iterate reverse is too much work. 
+        // Forward iteration returns the "deepest" match which is usually what we want (e.g. text inside button).
+        // Wait, if children overlap, later sibling is on top. So we should find the *last* matching child.
+        
+        layout_box_t *hit = NULL;
+        layout_box_t *child = root->first_child;
+        while (child) {
+            layout_box_t *result = layout_hit_test(child, local_x, local_y);
+            if (result) hit = result;
+            child = child->next_sibling;
+        }
+        
+        if (hit) return hit;
+        return root; // No child hit, return self
+    }
+    
+    return NULL;
+}

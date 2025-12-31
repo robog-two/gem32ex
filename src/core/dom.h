@@ -20,6 +20,7 @@ typedef struct node_s {
     node_type_t type;
     char *tag_name;
     char *content; // For text nodes
+    char *current_value; // For input/textarea nodes
     attr_t *attributes;
     style_t *style;
     void *image_data; // Pointer to decoded image or raw data
@@ -35,5 +36,6 @@ node_t* node_create(node_type_t type);
 void node_free(node_t *node);
 void node_add_child(node_t *parent, node_t *child);
 void node_add_attr(node_t *node, const char *name, const char *value);
+const char* node_get_attr(node_t *node, const char *name);
 
 #endif // DOM_H

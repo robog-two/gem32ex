@@ -39,4 +39,6 @@ void layout_free(layout_box_t *box);
 // Modernized layout entry point
 void layout_compute(layout_box_t *box, constraint_space_t space);
 
+layout_box_t* layout_hit_test(layout_box_t *root, int x, int y);
+
 #endif // LAYOUT_H

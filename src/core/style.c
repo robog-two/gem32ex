@@ -174,6 +174,29 @@ void style_compute(node_t *node) {
             style->text_align = TEXT_ALIGN_CENTER;
         }
 
+        // Form Elements
+        else if (strcasecmp(node->tag_name, "input") == 0 ||
+                   strcasecmp(node->tag_name, "select") == 0 ||
+                   strcasecmp(node->tag_name, "textarea") == 0 ||
+                   strcasecmp(node->tag_name, "button") == 0) {
+            style->display = DISPLAY_INLINE; // Should be inline-block, treating as inline for now
+            style->border_width = 1; // Basic border
+            style->padding_top = style->padding_bottom = 2;
+            style->padding_left = style->padding_right = 4;
+            // style->bg_color = 0xEEEEEE; // Light gray (requires setting in style_init or here)
+            // But style_init sets bg to white. We can override if needed, but white is fine for inputs.
+            if (strcasecmp(node->tag_name, "button") == 0) {
+                 style->bg_color = 0xDDDDDD; 
+                 style->text_align = TEXT_ALIGN_CENTER;
+            } else if (strcasecmp(node->tag_name, "input") == 0) {
+                 const char *type = node_get_attr(node, "type");
+                 if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) {
+                     style->bg_color = 0xDDDDDD;
+                     style->text_align = TEXT_ALIGN_CENTER;
+                 }
+            }
+        }
+
         // Inline Elements with special styles
         else if (strcasecmp(node->tag_name, "a") == 0) {
             style->display = DISPLAY_INLINE;

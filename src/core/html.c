@@ -87,6 +87,12 @@ node_t* html_parse(const char *html) {
                     node_add_attr(new_node, attr_name, attr_value);
                     if (attr_value) free(attr_value);
                 }
+                
+                // Initialize current_value for inputs
+                if (strcasecmp(tag_name, "input") == 0) {
+                    const char *val = node_get_attr(new_node, "value");
+                    if (val) new_node->current_value = strdup(val);
+                }
 
                 int self_closing = (*p == '/');
                 if (self_closing) p++;

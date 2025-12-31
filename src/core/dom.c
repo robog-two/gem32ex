@@ -1,6 +1,7 @@
 #include "dom.h"
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h> // For strcasecmp
 
 node_t* node_create(node_type_t type) {
     node_t *node = calloc(1, sizeof(node_t));
@@ -24,6 +25,7 @@ void node_free(node_t *node) {
 
     if (node->tag_name) free(node->tag_name);
     if (node->content) free(node->content);
+    if (node->current_value) free(node->current_value);
     if (node->style) free(node->style);
     if (node->image_data) free(node->image_data);
     if (node->iframe_doc) node_free(node->iframe_doc);
@@ -60,4 +62,16 @@ void node_add_attr(node_t *node, const char *name, const char *value) {
         attr->next = node->attributes;
         node->attributes = attr;
     }
+}
+
+const char* node_get_attr(node_t *node, const char *name) {
+    if (!node || !name) return NULL;
+    attr_t *attr = node->attributes;
+    while (attr) {
+        if (strcasecmp(attr->name, name) == 0) {
+            return attr->value;
+        }
+        attr = attr->next;
+    }
+    return NULL;
 }

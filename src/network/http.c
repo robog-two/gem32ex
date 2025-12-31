@@ -3,6 +3,7 @@
 #include <wininet.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 void network_response_free(network_response_t *res) {
     if (res) {
@@ -12,19 +13,72 @@ void network_response_free(network_response_t *res) {
     }
 }
 
-network_response_t* http_fetch(const char *url) {
+static network_response_t* perform_http_request(const char *url, const char *method, const char *body, const char *content_type) {
     HINTERNET hInternet = InternetOpen("Gem32Browser/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     if (!hInternet) return NULL;
 
-    HINTERNET hUrl = InternetOpenUrl(hInternet, url, NULL, 0, INTERNET_FLAG_RELOAD, 0);
-    if (!hUrl) {
+    URL_COMPONENTS urlComp = {0};
+    urlComp.dwStructSize = sizeof(urlComp);
+    
+    // Allocate buffers for cracking URL
+    char host[256] = {0};
+    char path[2048] = {0};
+    
+    urlComp.lpszHostName = host;
+    urlComp.dwHostNameLength = sizeof(host);
+    urlComp.lpszUrlPath = path;
+    urlComp.dwUrlPathLength = sizeof(path);
+    urlComp.dwSchemeLength = 1; // Set to non-zero to crack scheme
+
+    if (!InternetCrackUrl(url, 0, 0, &urlComp)) {
+        InternetCloseHandle(hInternet);
+        return NULL;
+    }
+
+    // Default path if empty
+    if (strlen(path) == 0) strcpy(path, "/");
+
+    HINTERNET hConnect = InternetConnect(hInternet, host, urlComp.nPort, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConnect) {
+        InternetCloseHandle(hInternet);
+        return NULL;
+    }
+
+    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
+        flags |= INTERNET_FLAG_SECURE;
+    }
+
+    HINTERNET hRequest = HttpOpenRequest(hConnect, method, path, NULL, NULL, NULL, flags, 0);
+    if (!hRequest) {
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return NULL;
+    }
+
+    // Add headers if POST
+    const char *headers = NULL;
+    DWORD headersLen = 0;
+    char headerBuf[256];
+    
+    if (body && content_type) {
+        snprintf(headerBuf, sizeof(headerBuf), "Content-Type: %s\r\n", content_type);
+        headers = headerBuf;
+        headersLen = strlen(headers);
+    }
+
+    BOOL sent = HttpSendRequest(hRequest, headers, headersLen, (LPVOID)body, body ? strlen(body) : 0);
+    if (!sent) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return NULL;
     }
 
     network_response_t *res = calloc(1, sizeof(network_response_t));
     if (!res) {
-        InternetCloseHandle(hUrl);
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return NULL;
     }
@@ -33,11 +87,12 @@ network_response_t* http_fetch(const char *url) {
     DWORD bytesRead;
     size_t totalSize = 0;
 
-    while (InternetReadFile(hUrl, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+    while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
         char *newData = realloc(res->data, totalSize + bytesRead + 1);
         if (!newData) {
             network_response_free(res);
-            InternetCloseHandle(hUrl);
+            InternetCloseHandle(hRequest);
+            InternetCloseHandle(hConnect);
             InternetCloseHandle(hInternet);
             return NULL;
         }
@@ -50,21 +105,32 @@ network_response_t* http_fetch(const char *url) {
     res->size = totalSize;
 
     // Get Content-Type
-    char contentType[256];
-    DWORD ctSize = sizeof(contentType);
-    if (HttpQueryInfo(hUrl, HTTP_QUERY_CONTENT_TYPE, contentType, &ctSize, NULL)) {
-        res->content_type = strdup(contentType);
+    char ctBuffer[256];
+    DWORD ctSize = sizeof(ctBuffer);
+    DWORD index = 0;
+    if (HttpQueryInfo(hRequest, HTTP_QUERY_CONTENT_TYPE, ctBuffer, &ctSize, &index)) {
+        res->content_type = strdup(ctBuffer);
     }
 
     // Get Status Code
     DWORD statusCode = 0;
     DWORD scSize = sizeof(statusCode);
-    if (HttpQueryInfo(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &scSize, NULL)) {
+    index = 0;
+    if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &scSize, &index)) {
         res->status_code = (int)statusCode;
     }
 
-    InternetCloseHandle(hUrl);
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
     InternetCloseHandle(hInternet);
 
     return res;
+}
+
+network_response_t* http_fetch(const char *url) {
+    return perform_http_request(url, "GET", NULL, NULL);
+}
+
+network_response_t* http_post(const char *url, const char *body, const char *content_type) {
+    return perform_http_request(url, "POST", body, content_type);
 }

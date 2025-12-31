@@ -8,6 +8,7 @@
 #include "ui/history.h"
 #include "ui/bookmarks.h"
 #include "ui/render.h"
+#include "ui/form.h"
 
 #define ID_BTN_STAR 101
 #define ID_EDIT_URL 102
@@ -22,10 +23,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
 static void Navigate(HWND hwnd, const char *url);
+static void HandleClick(HWND hwnd, int x, int y);
 
 static history_tree_t *g_history = NULL;
 static layout_box_t *g_current_layout = NULL;
 static node_t *g_current_dom = NULL;
+static char g_current_url[2048] = {0};
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_history = history_create();
@@ -74,6 +77,8 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 // ...
 
 static void Navigate(HWND hwnd, const char *url) {
+    strncpy(g_current_url, url, sizeof(g_current_url)-1);
+    
     network_response_t *res = http_fetch(url);
     if (res && res->data) {
         // Free previous DOM and Layout
@@ -109,8 +114,46 @@ static void Navigate(HWND hwnd, const char *url) {
     }
 }
 
+static void HandleClick(HWND hContent, int x, int y) {
+    if (!g_current_layout) return;
+    
+    layout_box_t *hit = layout_hit_test(g_current_layout, x, y);
+    if (!hit || !hit->node) return;
+    
+    node_t *node = hit->node;
+    if (node->type == DOM_NODE_ELEMENT && node->tag_name) {
+        int is_submit = 0;
+        if (strcasecmp(node->tag_name, "button") == 0) is_submit = 1;
+        if (strcasecmp(node->tag_name, "input") == 0) {
+             const char *type = node_get_attr(node, "type");
+             if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) is_submit = 1;
+        }
+
+        if (is_submit) {
+            network_response_t *res = form_submit(node, g_current_url);
+            if (res && res->data) {
+                if (g_current_layout) { layout_free(g_current_layout); g_current_layout = NULL; }
+                if (g_current_dom) { node_free(g_current_dom); g_current_dom = NULL; }
+
+                g_current_dom = html_parse(res->data);
+                if (g_current_dom) {
+                    style_compute(g_current_dom);
+                    RECT rect;
+                    GetClientRect(hContent, &rect);
+                    g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
+                    InvalidateRect(hContent, NULL, TRUE);
+                }
+                network_response_free(res);
+            }
+        }
+    }
+}
+
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+        case WM_LBUTTONDOWN:
+            HandleClick(hwnd, LOWORD(lParam), HIWORD(lParam));
+            break;
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
