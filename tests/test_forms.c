@@ -4,27 +4,8 @@
 #include <core/layout.h>
 #include <core/platform.h>
 
-// Mock implementation for testing
-void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height, int *out_baseline) {
-    if (!text) { *out_width = 0; *out_height = 0; if (out_baseline) *out_baseline = 0; return; }
-    
-    int len = strlen(text);
-    int char_w = (style && style->font_size > 0) ? style->font_size / 2 : 8; // Approx width
-    int char_h = (style && style->font_size > 0) ? style->font_size : 16;
-    
-    int total_w = len * char_w;
-    
-    if (width_constraint > 0 && total_w > width_constraint) {
-        // Mock wrapping
-        *out_width = width_constraint;
-        int lines = (total_w / width_constraint) + 1;
-        *out_height = lines * char_h;
-    } else {
-        *out_width = total_w;
-        *out_height = char_h;
-    }
-    if (out_baseline) *out_baseline = (char_h * 8) / 10; // 80% baseline
-}
+// Note: platform_measure_text is provided by src/ui/render.c (real Win32 implementation)
+// To compile this test: gcc tests/test_forms.c src/ui/render.c src/core/*.c -Isrc -lgdi32 -o test_forms.exe
 
 void print_layout(layout_box_t *box, int depth) {
     for (int i = 0; i < depth; i++) printf("  ");

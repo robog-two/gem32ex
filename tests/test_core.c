@@ -9,15 +9,7 @@
 #include "core/log.h"
 #include "test_ui.h"
 
-// Mock platform implementation
-void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height, int *out_baseline) {
-    (void)style; (void)width_constraint;
-    if (!text) return;
-    int len = (int)strlen(text);
-    *out_width = len * 10;
-    *out_height = 20;
-    if (out_baseline) *out_baseline = 16;
-}
+// Note: platform_measure_text is now provided by src/ui/render.c (real Win32 implementation)
 
 static int test_dom_impl() {
     const char *html = "<html><body><h1>Title</h1></body></html>";

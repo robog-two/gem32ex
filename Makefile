@@ -20,7 +20,7 @@ $(TARGET): $(OBJ)
 
 test: tests/all_tests.c tests/test_network.c tests/test_core.c tests/test_ui.c \
       src/network/tls.c src/network/http.c src/network/gemini.c \
-      src/network/protocol.c $(CORE_SRC)
+      src/network/protocol.c src/ui/render.c $(CORE_SRC)
 	$(CC) $(CFLAGS) -DTEST_BUILD -o gem32-tests.exe $^ $(LDFLAGS) -mconsole
 	./gem32-tests.exe
 
