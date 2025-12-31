@@ -132,7 +132,12 @@ static void HandleClick(HWND hContent, int x, int y) {
     }
     
     node_t *node = hit->node;
-    if (node->type == DOM_NODE_ELEMENT && node->tag_name) {
+    // Find nearest element if we hit a text node
+    while (node && node->type == DOM_NODE_TEXT) {
+        node = node->parent;
+    }
+
+    if (node && node->type == DOM_NODE_ELEMENT && node->tag_name) {
         // Handle Focus
         if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "textarea") == 0) {
             g_focused_node = node;
