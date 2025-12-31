@@ -25,6 +25,8 @@ void layout_free(layout_box_t *box) {
     free(box);
 }
 
+static void get_cumulative_offset(layout_box_t *box, int *dx, int *dy);
+
 static int is_block(node_t *node) {
     if (!node || !node->style) return 0;
     display_t d = node->style->display;
