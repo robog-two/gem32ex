@@ -11,6 +11,9 @@
 
 // Note: platform_measure_text is now provided by src/ui/render.c (real Win32 implementation)
 
+// Global needed by render.c for focus tracking (not used in tests)
+node_t *g_focused_node = NULL;
+
 static int test_dom_impl() {
     const char *html = "<html><body><h1>Title</h1></body></html>";
     node_t *dom = html_parse(html);
