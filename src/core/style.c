@@ -42,7 +42,7 @@ void style_compute(node_t *node) {
 
     style_t *style = node->style;
 
-    if (node->type == DOM_NODE_ELEMENT) {
+    if (node->type == DOM_NODE_ELEMENT && node->tag_name) {
         if (strcasecmp(node->tag_name, "root") == 0 || 
             strcasecmp(node->tag_name, "html") == 0) {
             style->display = DISPLAY_BLOCK;

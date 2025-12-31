@@ -12,9 +12,14 @@ static HFONT get_font(style_t *style) {
         if (style->font_weight >= 700) weight = FW_BOLD;
     }
 
-    return CreateFont(height, 0, 0, 0, weight, FALSE, FALSE, FALSE, 
+    HFONT hFont = CreateFont(height, 0, 0, 0, weight, FALSE, FALSE, FALSE, 
                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, 
                       DEFAULT_QUALITY, FF_DONTCARE, "Arial");
+    
+    if (!hFont) {
+        hFont = GetStockObject(DEFAULT_GUI_FONT);
+    }
+    return hFont;
 }
 
 // Implementation of core/platform.h interface
