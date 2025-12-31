@@ -21,6 +21,7 @@ void layout_free(layout_box_t *box) {
         layout_free(child);
         child = next;
     }
+    if (box->iframe_root) layout_free(box->iframe_root);
     free(box);
 }
 
@@ -387,6 +388,12 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     }
 
     if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) box->fragment.border_box.height = 16;
+
+    // Handle iFrames
+    if (box->node->iframe_doc) {
+        if (box->iframe_root) layout_free(box->iframe_root);
+        box->iframe_root = layout_create_tree(box->node->iframe_doc, box->fragment.content_box.width);
+    }
 }
 
 /*

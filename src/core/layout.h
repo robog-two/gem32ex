@@ -32,6 +32,8 @@ typedef struct layout_box_s {
     struct layout_box_s *parent;
     struct layout_box_s *first_child;
     struct layout_box_s *next_sibling;
+    
+    struct layout_box_s *iframe_root; // For iframes
 } layout_box_t;
 
 layout_box_t* layout_create_tree(node_t *root, int container_width);

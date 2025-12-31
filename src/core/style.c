@@ -284,6 +284,11 @@ void style_compute(node_t *node) {
                  style->bg_color = 0xFFFFFF;
                  style->width = 300;
                  style->height = 100;
+            } else if (strcasecmp(node->tag_name, "iframe") == 0) {
+                 style->display = DISPLAY_INLINE;
+                 style->width = 300;
+                 style->height = 150;
+                 style->border_width = 1;
             }
         }
 

@@ -262,6 +262,27 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
                 DeleteObject(hPen);
             }
 
+            // Render iframe content
+            if (box->iframe_root) {
+                int bw = box->node->style->border_width;
+                int pl = box->node->style->padding_left;
+                int pt = box->node->style->padding_top;
+                int cx = x + bw + pl;
+                int cy = y + bw + pt;
+                int cw = box->fragment.content_box.width;
+                // Use content box height if calculated, otherwise calculate from border box
+                int ch = box->fragment.content_box.height;
+                if (ch <= 0) ch = h - (bw * 2) - pt - box->node->style->padding_bottom;
+                
+                HRGN hRgn = CreateRectRgn(cx, cy, cx + cw, cy + ch);
+                SelectClipRgn(hdc, hRgn);
+                
+                render_tree(hdc, box->iframe_root, cx, cy);
+                
+                SelectClipRgn(hdc, NULL);
+                DeleteObject(hRgn);
+            }
+
             // Render input value
             if (box->node->tag_name && strcasecmp(box->node->tag_name, "input") == 0) {
                 const char *val = box->node->current_value ? box->node->current_value : node_get_attr(box->node, "value");
