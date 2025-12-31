@@ -1,6 +1,7 @@
 #include "loader.h"
 #include "http.h"
 #include "core/html.h"
+#include "core/log.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,10 +31,13 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
 
                 network_response_t *res = network_fetch(full_url);
                 if (res) {
+                    LOG_DEBUG("Loaded image: %s (%zu bytes)", full_url, res->size);
                     node->image_data = res->data;
                     node->image_size = res->size;
                     res->data = NULL; // Take ownership
                     network_response_free(res);
+                } else {
+                    LOG_WARN("Failed to load image: %s", full_url);
                 }
             }
         } else if (strcasecmp(node->tag_name, "iframe") == 0) {

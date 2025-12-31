@@ -1,4 +1,5 @@
 #include "gemini.h"
+#include "core/log.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #define SECURITY_WIN32
@@ -105,6 +106,8 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
 network_response_t* gemini_fetch(const char *url) {
     if (strncmp(url, "gemini://", 9) != 0) return NULL;
 
+    LOG_INFO("Gemini fetching: %s", url);
+
     if (!g_pSSPI) g_pSSPI = InitSecurityInterfaceA();
     if (!g_pSSPI) return NULL;
 
@@ -140,6 +143,7 @@ network_response_t* gemini_fetch(const char *url) {
         }
     }
     sprintf(port_str, "%d", port);
+    LOG_DEBUG("Gemini connection to %s:%s", host, port_str);
 
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return NULL;

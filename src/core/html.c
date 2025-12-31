@@ -1,4 +1,5 @@
 #include "html.h"
+#include "log.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,8 +14,12 @@ static int is_void_element(const char *tag) {
 }
 
 node_t* html_parse(const char *html) {
-    if (!html) return NULL;
+    if (!html) {
+        LOG_WARN("html_parse called with NULL input");
+        return NULL;
+    }
 
+    LOG_INFO("Parsing HTML content...");
     node_t *root = node_create(DOM_NODE_ELEMENT);
     root->tag_name = strdup("root");
     node_t *current = root;

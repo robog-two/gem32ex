@@ -1,5 +1,6 @@
 #include "layout.h"
 #include "platform.h"
+#include "log.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -305,6 +306,11 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
 
 layout_box_t* layout_create_tree(node_t *root, int container_width) {
     if (!root) return NULL;
+    
+    if (root->tag_name && strcmp(root->tag_name, "root") == 0) {
+        LOG_INFO("Creating layout tree with width %d", container_width);
+    }
+    
     layout_box_t *box = layout_create_box(root);
     node_t *child_node = root->first_child;
     layout_box_t *last_child_box = NULL;

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <olectl.h>
 #include "core/platform.h"
+#include "core/log.h"
 
 static HFONT get_font(style_t *style) {
     int height = -12; // Default
@@ -107,8 +108,12 @@ static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h)
 
             pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
             pPicture->lpVtbl->Release(pPicture);
+        } else {
+            LOG_ERROR("OleLoadPicture failed for image data of size %zu", box->node->image_size);
         }
         pStream->lpVtbl->Release(pStream);
+    } else {
+        LOG_ERROR("CreateStreamOnHGlobal failed for image data");
     }
 }
 

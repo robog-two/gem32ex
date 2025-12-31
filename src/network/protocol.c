@@ -1,6 +1,7 @@
 #include "protocol.h"
 #include "http.h"
 #include "gemini.h"
+#include "core/log.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,7 +19,12 @@ network_response_t* network_fetch(const char *url) {
     strncpy(current_url, url, sizeof(current_url)-1);
     current_url[sizeof(current_url)-1] = '\0';
 
+    LOG_INFO("Network fetch: %s", url);
+
     while (redirect_count < max_redirects) {
+        if (redirect_count > 0) {
+            LOG_INFO("Following redirect (%d/%d): %s", redirect_count, max_redirects, current_url);
+        }
         network_response_t *res = NULL;
         if (strncmp(current_url, "gemini://", 9) == 0) {
             res = gemini_fetch(current_url);

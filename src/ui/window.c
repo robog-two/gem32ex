@@ -5,6 +5,7 @@
 #include "core/html.h"
 #include "core/style.h"
 #include "core/layout.h"
+#include "core/log.h"
 #include "ui/history.h"
 #include "ui/bookmarks.h"
 #include "ui/render.h"
@@ -43,7 +44,10 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
 
-    if (!RegisterClass(&wc)) return FALSE;
+    if (!RegisterClass(&wc)) {
+        LOG_ERROR("Failed to register main window class");
+        return FALSE;
+    }
 
     // Register Content Window Class
     const char contentClassName[] = "Gem32ContentClass";
@@ -54,7 +58,10 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     wcc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wcc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // White background
     
-    if (!RegisterClass(&wcc)) return FALSE;
+    if (!RegisterClass(&wcc)) {
+        LOG_ERROR("Failed to register content window class");
+        return FALSE;
+    }
 
     HWND hwnd = CreateWindowEx(
         0,
@@ -65,12 +72,12 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         NULL, NULL, hInstance, NULL
     );
 
-    if (hwnd == NULL) return FALSE;
+    if (hwnd == NULL) {
+        LOG_ERROR("Failed to create main window");
+        return FALSE;
+    }
 
-    ShowWindow(hwnd, nCmdShow);
-    UpdateWindow(hwnd);
-
-    return TRUE;
+    LOG_INFO("Main window created successfully");
 }
 
 #include "network/loader.h"
@@ -78,25 +85,12 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 // ...
 
 static void ProcessNewContent(HWND hContent, network_response_t *res, const char *url) {
-    if (!res || !res->data) return;
-
-    // Free previous DOM and Layout
-    if (g_current_layout) {
-        layout_free(g_current_layout);
-        g_current_layout = NULL;
-    }
-    if (g_current_dom) {
-        node_free(g_current_dom);
-        g_current_dom = NULL;
+    if (!res || !res->data) {
+        LOG_WARN("ProcessNewContent called with null resource or data");
+        return;
     }
 
-    strncpy(g_current_url, url, sizeof(g_current_url)-1);
-    
-    // Update Address Bar (ID_EDIT_URL is in the parent window)
-    HWND hMain = GetParent(hContent);
-    SetWindowText(GetDlgItem(hMain, ID_EDIT_URL), g_current_url);
-
-    g_current_dom = html_parse(res->data);
+    LOG_INFO("Processing new content for URL: %s (%zu bytes)", url, res->size);
     if (g_current_dom) {
         loader_fetch_resources(g_current_dom, url);
         style_compute(g_current_dom);
@@ -113,11 +107,13 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
 }
 
 static void Navigate(HWND hwnd, const char *url) {
+    LOG_INFO("Navigating to: %s", url);
     network_response_t *res = network_fetch(url);
     if (res) {
         ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, res->final_url ? res->final_url : url);
         network_response_free(res);
     } else {
+        LOG_ERROR("Failed to fetch URL: %s", url);
         MessageBox(hwnd, "Failed to fetch URL", "Error", MB_ICONERROR);
     }
 }

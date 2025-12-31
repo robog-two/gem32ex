@@ -1,4 +1,5 @@
 #include "http.h"
+#include "core/log.h"
 #include <windows.h>
 #include <wininet.h>
 #include <stdlib.h>
@@ -70,15 +71,11 @@ static network_response_t* perform_http_request(const char *url, const char *met
 
     BOOL sent = HttpSendRequest(hRequest, headers, headersLen, (LPVOID)body, body ? (DWORD)strlen(body) : 0);
 
-    // Debug logging
-    FILE *f = fopen("debug.log", "a");
-    if (f) {
-        fprintf(f, "[HTTP] %s %s\n", method, url);
-        if (body) fprintf(f, "[BODY] %s\n", body);
-        fclose(f);
-    }
+    LOG_INFO("HTTP %s %s", method, url);
+    if (body) LOG_DEBUG("HTTP BODY: %s", body);
 
     if (!sent) {
+        LOG_ERROR("HttpSendRequest failed with error %lu", GetLastError());
         InternetCloseHandle(hRequest);
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
@@ -128,6 +125,7 @@ static network_response_t* perform_http_request(const char *url, const char *met
     index = 0;
     if (HttpQueryInfo(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &scSize, &index)) {
         res->status_code = (int)statusCode;
+        LOG_INFO("HTTP Response Status: %d", res->status_code);
     }
 
     // Get Final URL (WinInet might have followed redirects)

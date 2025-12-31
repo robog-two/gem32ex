@@ -1,5 +1,6 @@
 #include "form.h"
 #include "network/protocol.h"
+#include "core/log.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -84,11 +85,16 @@ static void collect_inputs(node_t *root, char **buffer, size_t *size) {
 
 network_response_t* form_submit(node_t *submit_node, const char *base_url, char *out_url, size_t out_url_size) {
     node_t *form = find_enclosing_form(submit_node);
-    if (!form) return NULL;
+    if (!form) {
+        LOG_WARN("form_submit called on node not inside a form");
+        return NULL;
+    }
 
     const char *action = node_get_attr(form, "action");
     const char *method = node_get_attr(form, "method");
     if (!method) method = "GET";
+
+    LOG_INFO("Form submission: method=%s, action=%s", method, action ? action : "(current)");
 
     // Resolve URL
     char target_url[2048];

@@ -1,5 +1,6 @@
 #include "style.h"
 #include "dom.h"
+#include "log.h"
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
@@ -37,6 +38,10 @@ static uint32_t parse_color(const char *val) {
 
 void style_compute(node_t *node) {
     if (!node || !node->style) return;
+
+    if (node->tag_name && strcmp(node->tag_name, "root") == 0) {
+        LOG_INFO("Computing styles...");
+    }
 
     // Inherit from parent
     if (node->parent && node->parent->style) {
