@@ -102,8 +102,6 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
     int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
 
-    const char *tag = box->node->tag_name ? box->node->tag_name : "?";
-
     layout_box_t *child = box->first_child;
     while (child) {
         if (child->node->style->display == DISPLAY_NONE) {
@@ -160,6 +158,10 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
                             grandchild->fragment.border_box.height = h;
                             grandchild->fragment.baseline = baseline;
 
+                            if (line.count < MAX_LINE_FRAGMENTS) {
+                                line.items[line.count++] = grandchild;
+                                line.width += w;
+                                if (baseline > line.max_ascent) line.max_ascent = baseline;
                                 if ((h - baseline) > line.max_descent) line.max_descent = h - baseline;
                             }
                         } else if (grandchild->node->style->display == DISPLAY_INLINE &&
@@ -259,10 +261,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     int bw = style->border_width;
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
     int ml = style->margin_left, mr = style->margin_right;
-    int mt = style->margin_top, mb = style->margin_bottom;
-
-    const char *tag = box->node->tag_name ? box->node->tag_name : (box->node->type == DOM_NODE_TEXT ? "TEXT" : "?");
-
+    
     if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
