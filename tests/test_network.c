@@ -34,7 +34,7 @@ static int test_http_impl() {
     network_response_t *res = network_fetch("http://google.com");
     int ok = (res && res->status_code >= 200 && res->status_code < 400);
     if (!res) LOG_ERROR("Fetch returned NULL");
-    else LOG_INFO("HTTP Status: %d, Size: %zu", res->status_code, res->size);
+    else LOG_INFO("HTTP Status: %d, Size: %lu", res->status_code, (unsigned long)res->size);
     if (res) network_response_free(res);
     return ok;
 }
@@ -43,7 +43,7 @@ static int test_https_impl() {
     network_response_t *res = network_fetch("https://www.google.com");
     int ok = (res && res->status_code >= 200 && res->status_code < 400);
     if (!res) LOG_ERROR("Fetch returned NULL");
-    else LOG_INFO("HTTPS Status: %d, Size: %zu", res->status_code, res->size);
+    else LOG_INFO("HTTPS Status: %d, Size: %lu", res->status_code, (unsigned long)res->size);
     if (res) network_response_free(res);
     return ok;
 }
@@ -52,7 +52,7 @@ static int test_gemini_impl() {
     network_response_t *res = network_fetch("gemini://geminiprotocol.net/");
     int ok = (res && res->status_code == 20);
     if (!res) LOG_ERROR("Fetch returned NULL");
-    else LOG_INFO("Gemini Status: %d, Size: %zu", res->status_code, res->size);
+    else LOG_INFO("Gemini Status: %d, Size: %lu", res->status_code, (unsigned long)res->size);
     if (res) network_response_free(res);
     return ok;
 }

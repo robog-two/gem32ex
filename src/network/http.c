@@ -48,8 +48,8 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
     if (body && content_type) {
         req_len += snprintf(request + req_len, sizeof(request) - req_len,
             "Content-Type: %s\r\n"
-            "Content-Length: %zu\r\n",
-            content_type, strlen(body));
+            "Content-Length: %lu\r\n",
+            content_type, (unsigned long)strlen(body));
     }
     strcat(request, "\r\n");
     req_len += 2;

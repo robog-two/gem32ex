@@ -31,7 +31,7 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
 
                 network_response_t *res = network_fetch(full_url);
                 if (res) {
-                    LOG_DEBUG("Loaded image: %s (%zu bytes)", full_url, res->size);
+                    LOG_DEBUG("Loaded image: %s (%lu bytes)", full_url, (unsigned long)res->size);
                     node->image_data = res->data;
                     node->image_size = res->size;
                     res->data = NULL; // Take ownership

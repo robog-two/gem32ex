@@ -95,7 +95,7 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
         return;
     }
 
-    LOG_INFO("Processing new content for URL: %s (%zu bytes)", url, res->size);
+    LOG_INFO("Processing new content for URL: %s (%lu bytes)", url, (unsigned long)res->size);
 
     // Free previous DOM and Layout
     if (g_current_layout) {
