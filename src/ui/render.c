@@ -23,13 +23,17 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
 
     // Create a temporary DC for measurement
     HDC hdc = CreateCompatibleDC(NULL);
+    if (!hdc) return; // Hard failure check
     
     HFONT hFont = get_font(style);
-    HFONT oldFont = SelectObject(hdc, hFont);
+    HFONT oldFont = (HFONT)SelectObject(hdc, hFont);
 
     TEXTMETRIC tm;
-    GetTextMetrics(hdc, &tm);
-    if (out_baseline) *out_baseline = tm.tmAscent;
+    if (GetTextMetrics(hdc, &tm)) {
+        if (out_baseline) *out_baseline = tm.tmAscent;
+    } else {
+        if (out_baseline) *out_baseline = 12; // Fallback
+    }
 
     RECT r = {0, 0, 0, 0};
     if (width_constraint > 0) {
@@ -88,7 +92,8 @@ static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h)
 }
 
 void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
-    if (!box || (box->node && box->node->style && box->node->style->display == DISPLAY_NONE)) return;
+    if (!box || !box->node || !box->node->style) return;
+    if (box->node->style->display == DISPLAY_NONE) return;
 
     int x = box->fragment.border_box.x + offset_x;
     int y = box->fragment.border_box.y + offset_y;
