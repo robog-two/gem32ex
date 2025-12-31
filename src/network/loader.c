@@ -106,7 +106,6 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                         node->image_size = res->size;
                         // Extract dimensions before caching
                         render_extract_image_dimensions(res->data, res->size, &node->image_width, &node->image_height);
-                        LOG_DEBUG("Image dimensions: %dx%d", node->image_width, node->image_height);
                         // Cache for later
                         cache_put_image(full_url, res->data, res->size);
                         res->data = NULL; // Take ownership

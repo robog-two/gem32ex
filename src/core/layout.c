@@ -255,47 +255,22 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     style_t *style = box->node->style;
     if (style->display == DISPLAY_NONE) return;
 
-    // Debug: log tag name for images
-    if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name) {
-        if (strcasecmp(box->node->tag_name, "img") == 0) {
-            static int img_count = 0;
-            LOG_DEBUG("Layout_compute: Found IMG tag! (IMG #%d)", ++img_count);
-        }
-    }
-
     box->last_space = space;
     int bw = style->border_width;
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
     int ml = style->margin_left, mr = style->margin_right;
-    
+
     if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
                style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
-
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
-    } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        // Images use intrinsic width if available, otherwise default to 100px
-        int img_width = (box->node->image_width > 0) ? box->node->image_width : 100;
-        box->fragment.border_box.width = img_width + (bw * 2) + pl + pr;
-        static int matched_img = 0;
-        LOG_DEBUG("Layout: MATCHED IMG #%d! Set img width to %d (content) + bw=%d*2 + pl=%d + pr=%d = %d total", ++matched_img, img_width, bw, pl, pr, box->fragment.border_box.width);
-        LOG_DEBUG("Layout: Image at y=%d, border_box now: x=%d y=%d w=%d h=%d", box->fragment.border_box.y, box->fragment.border_box.x, box->fragment.border_box.y, box->fragment.border_box.width, box->fragment.border_box.height);
-        LOG_DEBUG("Layout: Image display=%d style->width=%d intrinsic_w=%d intrinsic_h=%d", style->display, style->width, box->node->image_width, box->node->image_height);
+    } else if (style->display == DISPLAY_INLINE) {
+        box->fragment.border_box.width = space.available_width - ml - mr;
+        if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else {
-        // Not a style.width, not BLOCK/TABLE, and not an img tag
-        if (box->node->tag_name) {
-            LOG_DEBUG("Layout: Width fallback for tag '%s' display=%d (not img, not block)", box->node->tag_name, style->display);
-        }
-        if (style->display == DISPLAY_INLINE) {
-             box->fragment.border_box.width = space.available_width - ml - mr;
-             if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
-        } else {
-             box->fragment.border_box.width = 0;
-             static int zero_width = 0;
-             LOG_DEBUG("Layout: Setting width=0 #%d for display=%d", ++zero_width, style->display);
-        }
+        box->fragment.border_box.width = 0;
     }
 
     box->fragment.content_box.width = box->fragment.border_box.width - (bw * 2 + pl + pr);
@@ -400,26 +375,21 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     }
 
     // Height calculation
-    int content_height = child_y - (box->fragment.content_box.y); // child_y is relative to border box top
+    int content_height = child_y - (box->fragment.content_box.y);
     if (content_height < 0) content_height = 0;
 
     if (style->height > 0) {
         box->fragment.border_box.height = style->height + (bw * 2) + pt + pb;
+    } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0 && box->node->image_height > 0) {
+        // Replaced element (img) with intrinsic height
+        box->fragment.border_box.height = box->node->image_height + (bw * 2) + pt + pb;
     } else {
         box->fragment.border_box.height = content_height + (bw * 2) + pt + pb;
     }
 
-    // Handle zero-height elements
+    // Handle text nodes with no content height
     if (box->node->type == DOM_NODE_TEXT && box->fragment.border_box.height == 0) {
         box->fragment.border_box.height = 16;
-    } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0 && box->fragment.border_box.height == 0) {
-        // Images with no intrinsic height get default size
-        // Use intrinsic height if extracted, otherwise default
-        if (box->node->image_height > 0) {
-            box->fragment.border_box.height = box->node->image_height + (bw * 2) + pt + pb;
-        } else {
-            box->fragment.border_box.height = 100 + (bw * 2) + pt + pb;
-        }
     }
 
     // Handle iFrames

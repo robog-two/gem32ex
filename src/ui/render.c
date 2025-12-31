@@ -333,9 +333,8 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
                     GpStatus draw_status = fn_GdipDrawImageRectI(graphics, (GpImage*)bitmap, x, y, w, h);
                     if (draw_status == 0) {
                         drawn = 1;
-                        LOG_DEBUG("Image rendered with GDI+ (%lu bytes) at (%d,%d) size %dx%d", (unsigned long)size, x, y, w, h);
                     } else {
-                        LOG_WARN("GdipDrawImageRectI failed with status %d at (%d,%d) size %dx%d", (int)draw_status, x, y, w, h);
+                        LOG_WARN("GdipDrawImageRectI failed with status %d", (int)draw_status);
                     }
                     fn_GdipDeleteGraphics(graphics);
                 } else {
@@ -372,7 +371,6 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
                 HRESULT render_hr = pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
                 if (render_hr == S_OK) {
                     drawn = 1;
-                    LOG_DEBUG("Image rendered with OleLoadPicture (%lu bytes)", (unsigned long)size);
                 } else {
                     LOG_WARN("OleLoadPicture Render failed (hr=0x%lx)", (unsigned long)render_hr);
                 }
@@ -408,7 +406,6 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
 
     if (box->node->type == DOM_NODE_ELEMENT) {
         if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-            LOG_DEBUG("Render: Image box has border_box w=%d h=%d, passing to render_image_data", w, h);
             render_image_data(hdc, box->node->image_data, box->node->image_size, x, y, w, h);
         } else {
             // Background color if set
