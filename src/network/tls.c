@@ -135,7 +135,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                     LOG_DEBUG("Extra data after handshake: %d bytes", inBuffer[1].cbBuffer);
                     *extra_data = malloc(inBuffer[1].cbBuffer);
                     if (*extra_data) {
-                        memcpy(*extra_data, inBuffer[1].pvBuffer, inBuffer[1].cbBuffer);
+                        memcpy(*extra_data, (char*)readBuf + (readOffset - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
                         *extra_data_len = inBuffer[1].cbBuffer;
                     }
                 }
@@ -143,7 +143,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
             } else {
                 // SEC_I_CONTINUE_NEEDED
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
-                    memmove(readBuf, inBuffer[1].pvBuffer, inBuffer[1].cbBuffer);
+                    memmove(readBuf, (char*)readBuf + (readOffset - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
                     readOffset = inBuffer[1].cbBuffer;
                     LOG_DEBUG("Processing extra data (%d bytes)", readOffset);
                 } else {
