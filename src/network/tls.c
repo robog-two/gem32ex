@@ -205,7 +205,7 @@ tls_connection_t* tls_connect(const char *host, int port) {
 
     SCHANNEL_CRED schannelCred = {0};
     schannelCred.dwVersion = SCHANNEL_CRED_VERSION;
-    schannelCred.grbitEnabledProtocols = SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT;
+    schannelCred.grbitEnabledProtocols = 0;  // Use system default protocols (best for XP compatibility)
     schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS |
                            SCH_CRED_MANUAL_CRED_VALIDATION |
                            SCH_CRED_IGNORE_NO_REVOCATION_CHECK |
