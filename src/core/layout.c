@@ -268,8 +268,9 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        box->fragment.border_box.width = 100;
-        LOG_DEBUG("Layout: Set img width to 100 + borders/padding = %d", 100 + (bw * 2) + pl + pr);
+        // Images get default 100px content width, plus padding and border
+        box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
+        LOG_DEBUG("Layout: Set img width to 100 (content) + %d (padding/border) = %d total", (bw * 2) + pl + pr, box->fragment.border_box.width);
     } else {
         if (style->display == DISPLAY_INLINE) {
              box->fragment.border_box.width = space.available_width - ml - mr;
