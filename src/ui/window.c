@@ -8,6 +8,7 @@
 #include "core/layout.h"
 #include "core/log.h"
 #include "ui/history.h"
+#include "ui/history_ui.h"
 #include "ui/bookmarks.h"
 #include "ui/render.h"
 #include "ui/form.h"
@@ -168,97 +169,6 @@ static void LoaderProgressCallback(int current, int total, void *ctx) {
     }
 }
 
-static void FetchFavicon(history_node_t *node) {
-    if (!node || !node->url) return;
-
-    URL_COMPONENTS urlComp = {0};
-    urlComp.dwStructSize = sizeof(urlComp);
-    char host[256] = {0};
-    urlComp.lpszHostName = host;
-    urlComp.dwHostNameLength = sizeof(host);
-    urlComp.dwSchemeLength = 1;
-
-    if (!InternetCrackUrl(node->url, 0, 0, &urlComp)) return;
-
-    if (strncmp(node->url, "gemini://", 9) == 0) return;
-
-    const char *scheme = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? "https" : "http";
-
-    // Try multiple favicon formats
-    const char *favicon_paths[] = {
-        "/favicon.ico",     // Classic ICO format (widely supported)
-        "/favicon.png",     // Modern PNG format
-        NULL
-    };
-
-    for (int i = 0; favicon_paths[i]; i++) {
-        char favicon_url[2048];
-        snprintf(favicon_url, sizeof(favicon_url), "%s://%s%s", scheme, host, favicon_paths[i]);
-
-        network_response_t *res = network_fetch(favicon_url);
-        if (res && res->data && res->size > 0 && res->status_code == 200) {
-            history_node_set_favicon(node, res->data, res->size);
-            res->data = NULL;
-            if (res) network_response_free(res);
-            return;  // Success - stop trying other formats
-        }
-        if (res) network_response_free(res);
-    }
-}
-
-static void DrawHistoryTree(HDC hdc, history_node_t *node, int *x, int y) {
-    if (!node) return;
-    
-    int iconSize = 16;
-    int spacing = 24;
-    int curX = *x;
-
-    if (node->favicon_data) {
-        render_image_data(hdc, node->favicon_data, node->favicon_size, curX, y, iconSize, iconSize);
-    } else {
-        // Draw a globe-ish circle for Gemini or missing icons
-        HBRUSH hBrush = CreateSolidBrush(RGB(100, 150, 255));
-        HBRUSH oldBrush = SelectObject(hdc, hBrush);
-        Ellipse(hdc, curX, y, curX + iconSize, y + iconSize);
-        SelectObject(hdc, oldBrush);
-        DeleteObject(hBrush);
-    }
-
-    if (node == g_history->current) {
-        HPEN hPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
-        HPEN oldPen = SelectObject(hdc, hPen);
-        HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        Rectangle(hdc, curX - 2, y - 2, curX + iconSize + 2, y + iconSize + 2);
-        SelectObject(hdc, oldBrush);
-        SelectObject(hdc, oldPen);
-        DeleteObject(hPen);
-    }
-
-    *x += spacing;
-
-    for (int i = 0; i < node->children_count; i++) {
-        DrawHistoryTree(hdc, node->children[i], x, y);
-    }
-}
-
-static history_node_t* HitTestHistory(history_node_t *node, int *x, int y, int hitX, int hitY) {
-    if (!node) return NULL;
-    int iconSize = 16;
-    int spacing = 24;
-    int curX = *x;
-
-    if (hitX >= curX && hitX <= curX + iconSize && hitY >= y && hitY <= y + iconSize) {
-        return node;
-    }
-
-    *x += spacing;
-
-    for (int i = 0; i < node->children_count; i++) {
-        history_node_t *res = HitTestHistory(node->children[i], x, y, hitX, hitY);
-        if (res) return res;
-    }
-    return NULL;
-}
 
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -266,8 +176,7 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             if (!g_history || !g_history->root) return 0;
             int hitX = LOWORD(lParam);
             int hitY = HIWORD(lParam);
-            int x = 10;
-            history_node_t *node = HitTestHistory(g_history->root, &x, 10, hitX, hitY);
+            history_node_t *node = history_ui_hit_test(g_history, hitX, hitY);
             if (node) {
                 g_history->current = node;
                 g_skip_history = 1;
@@ -280,8 +189,7 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             if (g_history && g_history->root) {
-                int x = 10;
-                DrawHistoryTree(hdc, g_history->root, &x, 10);
+                history_ui_draw(hdc, g_history);
             }
             EndPaint(hwnd, &ps);
             return 0;
@@ -356,7 +264,7 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
 
         if (!g_skip_history) {
             history_add(g_history, url, "Title Placeholder");
-            FetchFavicon(g_history->current);
+            history_ui_fetch_favicon(g_history->current);
         }
         InvalidateRect(GetDlgItem(hMain, ID_HISTORY), NULL, TRUE);
     }
