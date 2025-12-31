@@ -36,6 +36,23 @@ static uint32_t parse_color(const char *val) {
     return 0;
 }
 
+static char* parse_url_value(const char *val) {
+    if (!val) return NULL;
+    if (strncasecmp(val, "url(", 4) == 0) {
+        const char *start = val + 4;
+        while (*start == ' ' || *start == '"' || *start == '\'') start++;
+        const char *end = val + strlen(val) - 1;
+        while (end > start && (*end == ' ' || *end == ')' || *end == '"' || *end == '\'')) end--;
+        int len = (int)(end - start + 1);
+        if (len <= 0) return NULL;
+        char *ret = malloc(len + 1);
+        memcpy(ret, start, len);
+        ret[len] = '\0';
+        return ret;
+    }
+    return strdup(val);
+}
+
 static void parse_css_property(style_t *style, char *name, char *val) {
     // Simple trim
     while (*name == ' ' || *name == '\t' || *name == '\n') name++;
@@ -51,6 +68,9 @@ static void parse_css_property(style_t *style, char *name, char *val) {
         else if (strcasecmp(val, "relative") == 0) style->position = POSITION_RELATIVE;
         else if (strcasecmp(val, "fixed") == 0) style->position = POSITION_FIXED;
         else style->position = POSITION_STATIC;
+    } else if (strcasecmp(name, "background-image") == 0) {
+        if (style->bg_image) free(style->bg_image);
+        style->bg_image = parse_url_value(val);
     } else if (strcasecmp(name, "top") == 0) style->top = atoi(val);
     else if (strcasecmp(name, "left") == 0) style->left = atoi(val);
     else if (strcasecmp(name, "right") == 0) style->right = atoi(val);
@@ -355,6 +375,9 @@ void style_compute(node_t *node) {
             style->color = parse_color(attr->value);
         } else if (strcasecmp(attr->name, "bgcolor") == 0 && attr->value) {
             style->bg_color = parse_color(attr->value);
+        } else if (strcasecmp(attr->name, "background") == 0 && attr->value) {
+            if (style->bg_image) free(style->bg_image);
+            style->bg_image = strdup(attr->value);
         }
         attr = attr->next;
     }

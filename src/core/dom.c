@@ -26,8 +26,12 @@ void node_free(node_t *node) {
     if (node->tag_name) free(node->tag_name);
     if (node->content) free(node->content);
     if (node->current_value) free(node->current_value);
-    if (node->style) free(node->style);
+    if (node->style) {
+        if (node->style->bg_image) free(node->style->bg_image);
+        free(node->style);
+    }
     if (node->image_data) free(node->image_data);
+    if (node->bg_image_data) free(node->bg_image_data);
     if (node->iframe_doc) node_free(node->iframe_doc);
 
     attr_t *attr = node->attributes;

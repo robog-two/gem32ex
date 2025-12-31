@@ -115,8 +115,8 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
 
     g_current_dom = html_parse(res->data);
     if (g_current_dom) {
-        loader_fetch_resources(g_current_dom, url);
         style_compute(g_current_dom);
+        loader_fetch_resources(g_current_dom, url);
 
         RECT rect;
         GetClientRect(hContent, &rect);

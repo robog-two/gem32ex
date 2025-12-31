@@ -45,6 +45,7 @@ typedef enum {
 typedef struct {
     uint32_t color;
     uint32_t bg_color;
+    char *bg_image; // URL
     int margin_top, margin_bottom, margin_left, margin_right;
     int padding_top, padding_bottom, padding_left, padding_right;
     int border_width;

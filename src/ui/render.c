@@ -166,14 +166,14 @@ static void set_color_from_style(HDC hdc, style_t *style) {
     SetTextColor(hdc, RGB(r, g, b));
 }
 
-static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h) {
-    if (!box->node->image_data || box->node->image_size == 0) return;
+static void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, int h) {
+    if (!data || size == 0) return;
 
-    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, box->node->image_size);
+    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
     if (!hGlobal) return;
 
     void *ptr = GlobalLock(hGlobal);
-    memcpy(ptr, box->node->image_data, box->node->image_size);
+    memcpy(ptr, data, size);
     GlobalUnlock(hGlobal);
 
     IStream *pStream = NULL;
@@ -202,7 +202,7 @@ static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h)
         if (!drawn) {
             // Fallback to OLE (BMP, JPG, GIF, ICO)
             IPicture *pPicture = NULL;
-            if (OleLoadPicture(pStream, box->node->image_size, FALSE, &IID_IPicture, (void**)&pPicture) == S_OK) {
+            if (OleLoadPicture(pStream, size, FALSE, &IID_IPicture, (void**)&pPicture) == S_OK) {
                 long hmWidth, hmHeight;
                 pPicture->lpVtbl->get_Width(pPicture, &hmWidth);
                 pPicture->lpVtbl->get_Height(pPicture, &hmHeight);
@@ -210,7 +210,7 @@ static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h)
                 pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
                 pPicture->lpVtbl->Release(pPicture);
             } else {
-                 LOG_ERROR("Image load failed (GDI+ and OleLoadPicture) for size %lu", (unsigned long)box->node->image_size);
+                 LOG_ERROR("Image load failed (GDI+ and OleLoadPicture) for size %lu", (unsigned long)size);
             }
         }
         
@@ -231,7 +231,7 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
 
     if (box->node->type == DOM_NODE_ELEMENT) {
         if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-            render_image(hdc, box, x, y, w, h);
+            render_image_data(hdc, box->node->image_data, box->node->image_size, x, y, w, h);
         } else {
             // Background color if set
             if (box->node->style->bg_color != 0xFFFFFF) {
@@ -239,6 +239,11 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
                 RECT r = {x, y, x + w, y + h};
                 FillRect(hdc, &r, hBrush);
                 DeleteObject(hBrush);
+            }
+
+            // Background Image
+            if (box->node->bg_image_data) {
+                render_image_data(hdc, box->node->bg_image_data, box->node->bg_image_size, x, y, w, h);
             }
             
             // Border if set

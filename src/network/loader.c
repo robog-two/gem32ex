@@ -19,6 +19,26 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
     if (!node) return;
 
     if (node->type == DOM_NODE_ELEMENT) {
+        if (node->style && node->style->bg_image) {
+            char full_url[1024];
+            if (strncmp(node->style->bg_image, "http", 4) == 0) {
+                strncpy(full_url, node->style->bg_image, 1023);
+            } else {
+                snprintf(full_url, 1023, "%s/%s", base_url, node->style->bg_image);
+            }
+
+            network_response_t *res = network_fetch(full_url);
+            if (res) {
+                LOG_DEBUG("Loaded background: %s (%lu bytes)", full_url, (unsigned long)res->size);
+                node->bg_image_data = res->data;
+                node->bg_image_size = res->size;
+                res->data = NULL; // Take ownership
+                network_response_free(res);
+            } else {
+                LOG_WARN("Failed to load background: %s", full_url);
+            }
+        }
+
         if (strcasecmp(node->tag_name, "img") == 0) {
             const char *src = get_attr(node, "src");
             if (src) {
