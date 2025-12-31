@@ -16,6 +16,37 @@ void history_ui_set_panel_height(int height) {
     if (height > 0) g_panel_height = height;
 }
 
+// Extract root domain from hostname (e.g., "sub.example.com" -> "example.com")
+static void get_root_domain(const char *host, char *root_domain, size_t max_len) {
+    if (!host || !root_domain) return;
+
+    strncpy(root_domain, host, max_len - 1);
+    root_domain[max_len - 1] = '\0';
+
+    // Count dots to determine if this is a subdomain
+    int dot_count = 0;
+    for (const char *p = host; *p; p++) {
+        if (*p == '.') dot_count++;
+    }
+
+    // If there are 2+ dots, it's likely a subdomain (sub.example.com)
+    // Extract just the last two parts (example.com)
+    if (dot_count >= 2) {
+        // Find the last two dots
+        const char *last_dot = strrchr(host, '.');
+        if (last_dot) {
+            const char *second_last_dot = NULL;
+            for (const char *p = host; p < last_dot; p++) {
+                if (*p == '.') second_last_dot = p;
+            }
+            if (second_last_dot) {
+                strncpy(root_domain, second_last_dot + 1, max_len - 1);
+                root_domain[max_len - 1] = '\0';
+            }
+        }
+    }
+}
+
 // Fetch favicon for a history node
 void history_ui_fetch_favicon(history_node_t *node) {
     if (!node || !node->url) return;
@@ -33,25 +64,41 @@ void history_ui_fetch_favicon(history_node_t *node) {
 
     const char *scheme = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? "https" : "http";
 
-    // Try multiple favicon formats
+    // Try favicon paths on multiple hosts
     const char *favicon_paths[] = {
-        "/favicon.ico",     // Classic ICO format (widely supported)
-        "/favicon.png",     // Modern PNG format
+        "/favicon.ico",
+        "/favicon.png",
         NULL
     };
 
-    for (int i = 0; favicon_paths[i]; i++) {
-        char favicon_url[2048];
-        snprintf(favicon_url, sizeof(favicon_url), "%s://%s%s", scheme, host, favicon_paths[i]);
+    // Build list of hosts to try (subdomain first, then root domain)
+    char hosts_to_try[2][256];
+    strncpy(hosts_to_try[0], host, sizeof(hosts_to_try[0]) - 1);
+    hosts_to_try[0][sizeof(hosts_to_try[0]) - 1] = '\0';
 
-        network_response_t *res = network_fetch(favicon_url);
-        if (res && res->data && res->size > 0 && res->status_code == 200) {
-            history_node_set_favicon(node, res->data, res->size);
-            res->data = NULL;
-            if (res) network_response_free(res);
-            return;  // Success - stop trying other formats
+    get_root_domain(host, hosts_to_try[1], sizeof(hosts_to_try[1]));
+
+    // Try each host
+    for (int h = 0; h < 2; h++) {
+        // Skip if this host is the same as the previous one
+        if (h > 0 && strcmp(hosts_to_try[h], hosts_to_try[h-1]) == 0) {
+            continue;
         }
-        if (res) network_response_free(res);
+
+        // Try each favicon format on this host
+        for (int i = 0; favicon_paths[i]; i++) {
+            char favicon_url[2048];
+            snprintf(favicon_url, sizeof(favicon_url), "%s://%s%s", scheme, hosts_to_try[h], favicon_paths[i]);
+
+            network_response_t *res = network_fetch(favicon_url);
+            if (res && res->data && res->size > 0 && res->status_code == 200) {
+                history_node_set_favicon(node, res->data, res->size);
+                res->data = NULL;
+                if (res) network_response_free(res);
+                return;  // Success - stop trying other hosts/formats
+            }
+            if (res) network_response_free(res);
+        }
     }
 }
 
