@@ -42,8 +42,8 @@ tls_connection_t* tls_connect(const char *host, int port) {
         return NULL;
     }
 
-    // Create SSL context
-    const SSL_METHOD *method = SSLv23_client_method();
+    // Create SSL context for TLS 1.2 only (OpenSSL 1.1.1 compatible)
+    const SSL_METHOD *method = TLSv1_2_client_method();
     conn->ctx = SSL_CTX_new(method);
     if (!conn->ctx) {
         log_openssl_errors("SSL_CTX_new failed");
@@ -52,9 +52,7 @@ tls_connection_t* tls_connect(const char *host, int port) {
         return NULL;
     }
 
-    // Configure SSL context for modern TLS
-    // Disable old protocols, allow TLS 1.0+ (best available on system)
-    SSL_CTX_set_options(conn->ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
+    LOG_INFO("TLS configured to use TLS 1.2 only");
 
     // Set cipher list - prefer modern ciphers but allow older ones for compatibility
     // This prioritizes AES-GCM and modern ciphers while keeping some compatibility
