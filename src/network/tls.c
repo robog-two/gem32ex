@@ -25,7 +25,9 @@ static int send_all(SOCKET s, const char *buf, int len) {
 static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI, PCredHandle phCreds, const char* szHostName, PCtxtHandle phContext, char **extra_data, int *extra_data_len) {
     SecBufferDesc outBufferDesc, inBufferDesc;
     SecBuffer outBuffer[1], inBuffer[2];
-    DWORD dwSSPIFlags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_RET_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+    DWORD dwSSPIFlags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | 
+                        ISC_RET_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM |
+                        ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_USE_SUPPLIED_CREDS;
     SECURITY_STATUS scRet;
 
     outBufferDesc.ulVersion = SECBUFFER_VERSION;
@@ -49,7 +51,14 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
 
     while (!bDone) {
         int n = recv(s, readBuf + readOffset, sizeof(readBuf) - readOffset, 0);
-        if (n <= 0) return SEC_E_INTERNAL_ERROR;
+        if (n < 0) {
+            LOG_ERROR("Handshake recv failed: %lu", GetLastError());
+            return SEC_E_INTERNAL_ERROR;
+        }
+        if (n == 0) {
+            LOG_ERROR("Handshake connection closed by peer");
+            return SEC_E_INTERNAL_ERROR;
+        }
         readOffset += n;
 
         inBufferDesc.ulVersion = SECBUFFER_VERSION;
@@ -67,11 +76,19 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
 
         scRet = pSSPI->InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
 
-        if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED) {
+        if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED || 
+            (FAILED(scRet) && (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer))) {
+            
             if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
                 send_all(s, outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
                 pSSPI->FreeContextBuffer(outBuffer[0].pvBuffer);
             }
+            
+            if (FAILED(scRet)) {
+                LOG_ERROR("InitializeSecurityContext failed: 0x%lx", scRet);
+                return scRet;
+            }
+
             if (scRet == SEC_E_OK) {
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
                     *extra_data = malloc(inBuffer[1].cbBuffer);
@@ -81,11 +98,19 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                     }
                 }
                 bDone = TRUE;
+            } else {
+                // SEC_I_CONTINUE_NEEDED
+                if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
+                    memmove(readBuf, (char*)inBuffer[0].pvBuffer + (inBuffer[0].cbBuffer - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
+                    readOffset = inBuffer[1].cbBuffer;
+                } else {
+                    readOffset = 0;
+                }
             }
-            readOffset = 0; 
         } else if (scRet == SEC_E_INCOMPLETE_MESSAGE) {
             continue;
         } else {
+            LOG_ERROR("InitializeSecurityContext final error: 0x%lx", scRet);
             return scRet;
         }
     }
@@ -121,10 +146,13 @@ tls_connection_t* tls_connect(const char *host, int port) {
     schannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION;
 
     if (conn->pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &conn->hCreds, NULL) != SEC_E_OK) {
+        LOG_ERROR("AcquireCredentialsHandle failed");
         closesocket(conn->socket); free(conn); return NULL;
     }
 
-    if (PerformHandshake(conn->socket, conn->pSSPI, &conn->hCreds, host, &conn->hContext, &conn->extra_data, &conn->extra_data_len) != SEC_E_OK) {
+    SECURITY_STATUS sc = PerformHandshake(conn->socket, conn->pSSPI, &conn->hCreds, host, &conn->hContext, &conn->extra_data, &conn->extra_data_len);
+    if (sc != SEC_E_OK) {
+        LOG_ERROR("PerformHandshake failed: 0x%lx", sc);
         conn->pSSPI->FreeCredentialsHandle(&conn->hCreds);
         closesocket(conn->socket); free(conn); return NULL;
     }
@@ -169,6 +197,7 @@ int tls_recv(tls_connection_t *conn, char *buf, int max_len) {
     char* recvBuf = malloc(32768);
     int recvLen = 0;
     int decrypted_len = 0;
+    SECURITY_STATUS sc = SEC_E_OK;
 
     if (conn->extra_data_len > 0) {
         memcpy(recvBuf, conn->extra_data, conn->extra_data_len);
@@ -179,9 +208,10 @@ int tls_recv(tls_connection_t *conn, char *buf, int max_len) {
     }
 
     while (TRUE) {
-        if (recvLen == 0 || decrypted_len == 0) {
+        if (recvLen == 0 || sc == SEC_E_INCOMPLETE_MESSAGE) {
             int n = recv(conn->socket, recvBuf + recvLen, 32768 - recvLen, 0);
-            if (n <= 0) break;
+            if (n < 0) { free(recvBuf); return -1; }
+            if (n == 0) break;
             recvLen += n;
         }
 
@@ -197,7 +227,7 @@ int tls_recv(tls_connection_t *conn, char *buf, int max_len) {
         decryptBuffers[2].BufferType = SECBUFFER_EMPTY;
         decryptBuffers[3].BufferType = SECBUFFER_EMPTY;
 
-        SECURITY_STATUS sc = conn->pSSPI->DecryptMessage(&conn->hContext, &decryptDesc, 0, NULL);
+        sc = conn->pSSPI->DecryptMessage(&conn->hContext, &decryptDesc, 0, NULL);
         if (sc == SEC_E_OK) {
             SecBuffer* pData = NULL;
             SecBuffer* pExtra = NULL;
@@ -221,8 +251,6 @@ int tls_recv(tls_connection_t *conn, char *buf, int max_len) {
             break; 
         } else if (sc == SEC_E_INCOMPLETE_MESSAGE) {
             continue;
-        } else if (sc == SEC_I_CONTEXT_EXPIRED) {
-            break;
         } else {
             break;
         }

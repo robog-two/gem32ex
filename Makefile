@@ -16,7 +16,7 @@ $(TARGET): $(OBJ)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-test: tests/all_tests.c tests/test_network.c tests/test_core.c \
+test: tests/all_tests.c tests/test_network.c tests/test_core.c tests/test_ui.c \
       src/network/tls.c src/network/http.c src/network/gemini.c \
       src/network/protocol.c $(CORE_SRC)
 	$(CC) $(CFLAGS) -DTEST_BUILD -o gem32-tests.exe $^ $(LDFLAGS) -mconsole

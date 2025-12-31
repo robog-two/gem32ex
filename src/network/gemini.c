@@ -71,30 +71,44 @@ network_response_t* gemini_fetch(const char *url) {
         memcpy(res->data + total_received, buffer, received);
         total_received += received;
         res->data[total_received] = '\0';
+    }
+    res->size = total_received;
 
-        // Initial parsing of header
-        if (total_received > 0 && res->status_code == 0) {
+    // Robust parsing after full receive
+    if (res->data && res->size >= 2) {
+        char *line_end = strstr(res->data, "\r\n");
+        if (line_end) {
+            *line_end = '\0';
             char *space = strchr(res->data, ' ');
             if (space) {
                 *space = '\0';
                 res->status_code = atoi(res->data);
-                *space = ' ';
-                
-                char *crlf = strstr(res->data, "\r\n");
-                if (crlf) {
-                    int header_len = (int)(crlf - (space + 1));
-                    res->content_type = malloc(header_len + 1);
-                    memcpy(res->content_type, space + 1, header_len);
-                    res->content_type[header_len] = '\0';
-                    
-                    // Move body data to the beginning of res->data if needed? 
-                    // No, for Gemini the body is just after CRLF. 
-                    // Let's refine parsing later if needed.
+                res->content_type = strdup(space + 1);
+                *space = ' '; // Restore
+            } else {
+                res->status_code = atoi(res->data);
+            }
+            *line_end = '\r'; // Restore
+            
+            // Body starts after CRLF
+            char *body_start = line_end + 2;
+            size_t body_len = res->size - (body_start - res->data);
+            if (body_len > 0) {
+                char *body_data = malloc(body_len + 1);
+                if (body_data) {
+                    memcpy(body_data, body_start, body_len);
+                    body_data[body_len] = '\0';
+                    free(res->data);
+                    res->data = body_data;
+                    res->size = body_len;
                 }
+            } else {
+                free(res->data);
+                res->data = NULL;
+                res->size = 0;
             }
         }
     }
-    res->size = total_received;
 
     tls_close(conn);
     return res;
