@@ -41,7 +41,23 @@ void print_layout(layout_box_t *box, int depth) {
 }
 
 int main() {
-    const char *html = "<html><body><table><tr><td>Cell 1</td><td>Cell 2</td></tr></table></body></html>";
+    const char *html = "<html><body>"
+                       "<h1>Title</h1>"
+                       "<p>Paragraph with <b>bold</b> text.</p>"
+                       "<table>"
+                       "  <tr>"
+                       "    <td>Cell 1</td>"
+                       "    <td>Cell 2 with <span style='color:red'>red</span> text</td>"
+                       "  </tr>"
+                       "  <tr>"
+                       "    <td><img src='test.jpg'></td>"
+                       "    <td>"
+                       "      <table><tr><td>Nested</td></tr></table>"
+                       "    </td>"
+                       "  </tr>"
+                       "</table>"
+                       "</body></html>";
+
     node_t *dom = html_parse(html);
     if (dom) {
         style_compute(dom);

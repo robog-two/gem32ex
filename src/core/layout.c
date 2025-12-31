@@ -242,6 +242,24 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         child_y += prev_margin_bottom;
     } else {
         layout_inline_children(box, space, &child_y);
+        
+        // For inline containers (like <b>, <span>), the width is the width of the content.
+        // layout_inline_children calculates positions, but we need to sum up the width or find the bounding box.
+        if (style->display == DISPLAY_INLINE) {
+            int max_x = 0;
+            layout_box_t *k = box->first_child;
+            while (k) {
+                int right_edge = k->fragment.border_box.x + k->fragment.border_box.width;
+                if (right_edge > max_x) max_x = right_edge;
+                k = k->next_sibling;
+            }
+            // Relative to content box x (which is usually 0 for inline recursion start)
+            int content_w = max_x - box->fragment.content_box.x; 
+            if (content_w < 0) content_w = 0;
+            
+            box->fragment.border_box.width = content_w + (bw * 2) + pl + pr;
+            box->fragment.content_box.width = content_w;
+        }
     }
 
     int content_height = child_y - (box->fragment.border_box.y + bw + pt);
