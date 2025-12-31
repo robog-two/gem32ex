@@ -25,6 +25,8 @@ typedef struct node_s {
     style_t *style;
     void *image_data; // Pointer to decoded image or raw data
     size_t image_size;
+    int image_width; // Intrinsic image width in pixels
+    int image_height; // Intrinsic image height in pixels
     void *bg_image_data;
     size_t bg_image_size;
     struct node_s *iframe_doc; // Embedded DOM tree for iframes

@@ -82,6 +82,25 @@ void render_cleanup(void) {
     }
 }
 
+// Public function for extracting image dimensions (supports PNG, others)
+void render_extract_image_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
+    if (!data || !out_width || !out_height) {
+        if (out_width) *out_width = 0;
+        if (out_height) *out_height = 0;
+        return;
+    }
+
+    // Try PNG first
+    if (get_png_dimensions(data, size, out_width, out_height)) {
+        return;
+    }
+
+    // For other formats (JPG, BMP, GIF, etc.), we'd need format-specific parsers
+    // For now, default to reasonable dimensions if format unknown
+    *out_width = 100;
+    *out_height = 100;
+}
+
 static HFONT get_font(style_t *style) {
     int height = -12; // Default
     int weight = FW_NORMAL;
@@ -172,6 +191,25 @@ static int is_png(const void *data, size_t size) {
     const unsigned char *bytes = (const unsigned char *)data;
     return bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G' &&
            bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A;
+}
+
+// Extract PNG dimensions from the IHDR chunk
+// PNG format: 8 byte signature, then IHDR chunk with width/height at bytes 16-24
+static int get_png_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
+    if (size < 24 || !is_png(data, size)) return 0;
+
+    const unsigned char *bytes = (const unsigned char *)data;
+    // IHDR chunk width is at offset 16-20 (big-endian)
+    // IHDR chunk height is at offset 20-24 (big-endian)
+    unsigned int width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+    unsigned int height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+
+    // Sanity check - PNG dimensions should be reasonable
+    if (width == 0 || width > 65535 || height == 0 || height > 65535) return 0;
+
+    *out_width = (int)width;
+    *out_height = (int)height;
+    return 1;
 }
 
 
