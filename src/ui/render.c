@@ -166,6 +166,14 @@ static void set_color_from_style(HDC hdc, style_t *style) {
     SetTextColor(hdc, RGB(r, g, b));
 }
 
+// Detect PNG signature (89 50 4E 47 0D 0A 1A 0A)
+static int is_png(const void *data, size_t size) {
+    if (size < 8) return 0;
+    const unsigned char *bytes = (const unsigned char *)data;
+    return bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G' &&
+           bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A;
+}
+
 void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, int h) {
     if (!data || size == 0) return;
 
@@ -174,6 +182,8 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
         LOG_WARN("Image data too large: %lu bytes (max 10MB)", (unsigned long)size);
         return;
     }
+
+    int is_png_file = is_png(data, size);
 
     HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
     if (!hGlobal) {
@@ -195,7 +205,7 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
     if (CreateStreamOnHGlobal(hGlobal, TRUE, &pStream) == S_OK) {
         int drawn = 0;
 
-        // Try GDI+ first (supports PNG)
+        // Try GDI+ first (supports PNG, JPEG, GIF, BMP, TIFF, ICO)
         if (g_hGdiPlus && fn_GdipCreateBitmapFromStream && fn_GdipCreateFromHDC) {
             GpBitmap *bitmap = NULL;
             GpStatus status = fn_GdipCreateBitmapFromStream(pStream, &bitmap);
@@ -210,15 +220,19 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
                 }
                 fn_GdipDisposeImage((GpImage*)bitmap);
             } else if (status != 0) {
-                LOG_DEBUG("GDI+ failed to load image (status %d), trying OleLoadPicture", (int)status);
+                if (is_png_file) {
+                    LOG_WARN("GDI+ failed to load PNG (status %d) - GDI+ may not be properly installed or updated for PNG support", (int)status);
+                } else {
+                    LOG_DEBUG("GDI+ failed to load image (status %d), trying OleLoadPicture", (int)status);
+                }
             }
             // If GDI+ failed, reset stream position for fallback
             LARGE_INTEGER li = {0};
             pStream->lpVtbl->Seek(pStream, li, STREAM_SEEK_SET, NULL);
         }
 
-        if (!drawn) {
-            // Fallback to OLE (BMP, JPG, GIF, ICO)
+        if (!drawn && !is_png_file) {
+            // Fallback to OLE (BMP, JPG, GIF, ICO) - NOTE: OLE does NOT support PNG
             IPicture *pPicture = NULL;
             HRESULT hr = OleLoadPicture(pStream, size, FALSE, &IID_IPicture, (void**)&pPicture);
             if (hr == S_OK && pPicture) {
@@ -235,8 +249,12 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
                 }
                 pPicture->lpVtbl->Release(pPicture);
             } else {
-                LOG_WARN("Image load failed (GDI+ and OleLoadPicture) for size %lu (hr=0x%lx)", (unsigned long)size, (unsigned long)hr);
+                LOG_WARN("Image load failed (OleLoadPicture) for size %lu (hr=0x%lx)", (unsigned long)size, (unsigned long)hr);
             }
+        }
+
+        if (!drawn && is_png_file) {
+            LOG_ERROR("PNG image could not be rendered. Ensure GDI+ is properly installed on Windows XP. PNG images require GDI+ support which is available on Windows XP SP3 but may require manual installation or update of gdiplus.dll");
         }
 
         pStream->lpVtbl->Release(pStream);
