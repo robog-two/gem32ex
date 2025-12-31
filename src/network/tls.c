@@ -54,23 +54,30 @@ tls_connection_t* tls_connect(const char *host, int port) {
 
     LOG_INFO("TLS configured to use TLS 1.2 only");
 
-    // Set cipher list - prefer modern ciphers but allow older ones for compatibility
-    // This prioritizes AES-GCM and modern ciphers while keeping some compatibility
-    const char *cipher_list = "ECDHE-RSA-AES128-GCM-SHA256:"
+    // Set cipher list - include both ECDSA and RSA cipher suites for Gemini protocol
+    // Gemini servers often use ECDSA certificates, so ECDSA ciphers are required
+    // All these ciphers are available in OpenSSL 1.1.1
+    const char *cipher_list = "ECDHE-ECDSA-AES128-GCM-SHA256:"
+                              "ECDHE-ECDSA-AES256-GCM-SHA384:"
+                              "ECDHE-RSA-AES128-GCM-SHA256:"
                               "ECDHE-RSA-AES256-GCM-SHA384:"
+                              "ECDHE-ECDSA-AES128-SHA256:"
+                              "ECDHE-ECDSA-AES256-SHA384:"
                               "ECDHE-RSA-AES128-SHA256:"
                               "ECDHE-RSA-AES256-SHA384:"
                               "AES128-GCM-SHA256:"
-                              "AES256-GCM-SHA384:"
-                              "AES128-SHA256:"
-                              "AES256-SHA256:"
-                              "AES128-SHA:"
-                              "AES256-SHA:"
-                              "DES-CBC3-SHA";
+                              "AES256-GCM-SHA384";
 
     if (!SSL_CTX_set_cipher_list(conn->ctx, cipher_list)) {
         log_openssl_errors("Failed to set cipher list");
         LOG_INFO("Using default cipher list");
+    }
+
+    // Set elliptic curve for ECDHE - P-256 is widely supported (OpenSSL 1.1.1 compatible)
+    EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+    if (ecdh) {
+        SSL_CTX_set_tmp_ecdh(conn->ctx, ecdh);
+        EC_KEY_free(ecdh);
     }
 
     // Resolve hostname
