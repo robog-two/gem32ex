@@ -24,7 +24,7 @@
 #define ID_STATUS_TEXT   109
 
 #define TOP_BAR_HEIGHT 30
-#define HISTORY_HEIGHT 150
+#define HISTORY_WIDTH 150  // Width of history pane on left
 
 // Standard Shell32 Animation IDs
 #define IDR_AVI_FILECOPY 160
@@ -545,13 +545,21 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
     if (hUrl) MoveWindow(hUrl, urlX, topBarY, urlWidth, btnSize, TRUE);
     if (hGo) MoveWindow(hGo, width - btnSize, topBarY, btnSize, btnSize, TRUE);
 
+    // History pane on left
     int contentY = TOP_BAR_HEIGHT;
-    int historyY = height - HISTORY_HEIGHT;
-    int contentHeight = historyY - contentY;
+    int contentHeight = height - contentY;
     if (contentHeight < 0) contentHeight = 0;
 
-    if (hContent) MoveWindow(hContent, 0, contentY, width, contentHeight, TRUE);
-    if (hHistory) MoveWindow(hHistory, 0, historyY, width, HISTORY_HEIGHT, TRUE);
+    // Content area takes up the rest (right side)
+    int contentX = HISTORY_WIDTH;
+    int contentWidth = width - HISTORY_WIDTH;
+    if (contentWidth < 0) contentWidth = 0;
+
+    if (hHistory) MoveWindow(hHistory, 0, contentY, HISTORY_WIDTH, contentHeight, TRUE);
+    if (hContent) MoveWindow(hContent, contentX, contentY, contentWidth, contentHeight, TRUE);
+
+    // Update history_ui panel height
+    history_ui_set_panel_height(contentHeight);
 
     // Center Loading Panel
     if (hLoading) {
