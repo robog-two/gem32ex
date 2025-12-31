@@ -75,9 +75,6 @@ tls_connection_t* tls_connect(const char *host, int port) {
         LOG_INFO("Using default cipher list");
     }
 
-    // Set minimum TLS version (TLS 1.0 for XP compatibility, will use highest available)
-    SSL_CTX_set_min_proto_version(conn->ctx, TLS1_VERSION);
-
     // Resolve hostname
     char port_str[16];
     sprintf(port_str, "%d", port);
