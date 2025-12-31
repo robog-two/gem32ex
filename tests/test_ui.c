@@ -37,23 +37,102 @@ void test_ui_add_result(const char *name, int passed, const char *logs) {
     }
 }
 
+static void CopyTestLogsToClipboard(int test_index) {
+    if (test_index < 0 || test_index >= g_test_count) return;
+
+    const char *logs = g_results[test_index].logs;
+    if (!logs) return;
+
+    size_t len = strlen(logs);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len + 1);
+    if (!hMem) return;
+
+    char *pMem = GlobalLock(hMem);
+    if (pMem) {
+        memcpy(pMem, logs, len + 1);
+        GlobalUnlock(hMem);
+
+        if (OpenClipboard(NULL)) {
+            EmptyClipboard();
+            SetClipboardData(CF_TEXT, hMem);
+            CloseClipboard();
+        } else {
+            GlobalFree(hMem);
+        }
+    } else {
+        GlobalFree(hMem);
+    }
+}
+
 static LRESULT CALLBACK TestWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    static HWND hTree = NULL;
+
     switch (msg) {
+        case WM_CREATE:
+            hTree = NULL;
+            break;
+
         case WM_DESTROY:
             PostQuitMessage(0);
             break;
+
         case WM_SIZE: {
             int w = LOWORD(lParam);
             int h = HIWORD(lParam);
             HWND hStatus = GetDlgItem(hwnd, 2);
             HWND hProgress = GetDlgItem(hwnd, 3);
-            HWND hTree = GetDlgItem(hwnd, 1);
-            
+            hTree = GetDlgItem(hwnd, 1);
+
             if (hStatus) MoveWindow(hStatus, 10, 10, w - 20, 30, TRUE);
             if (hProgress) MoveWindow(hProgress, 10, 45, w - 20, 20, TRUE);
             if (hTree) MoveWindow(hTree, 10, 75, w - 20, h - 85, TRUE);
             break;
         }
+
+        case WM_NOTIFY: {
+            NMHDR *nmhdr = (NMHDR*)lParam;
+            if (nmhdr->idFrom == 1 && nmhdr->code == NM_RCLICK) {
+                // Right-click on tree view
+                TVHITTESTINFO ht = {0};
+                GetCursorPos(&ht.pt);
+                ScreenToClient(nmhdr->hwndFrom, &ht.pt);
+                HTREEITEM hItem = TreeView_HitTest(nmhdr->hwndFrom, &ht);
+
+                if (hItem) {
+                    // Check if this is a root item (test result, not a log line)
+                    HTREEITEM hParent = TreeView_GetParent(nmhdr->hwndFrom, hItem);
+                    if (hParent == NULL) {
+                        // This is a root test item, find which test it is
+                        HTREEITEM hFirst = TreeView_GetRoot(nmhdr->hwndFrom);
+                        int index = 0;
+                        while (hFirst && hFirst != hItem) {
+                            hFirst = TreeView_GetNextSibling(nmhdr->hwndFrom, hFirst);
+                            index++;
+                        }
+
+                        if (hFirst == hItem && index < g_test_count) {
+                            // Show context menu
+                            HMENU hMenu = CreatePopupMenu();
+                            AppendMenu(hMenu, MF_STRING, 1001, "Copy Logs");
+
+                            POINT pt;
+                            GetCursorPos(&pt);
+                            int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_LEFTBUTTON,
+                                                    pt.x, pt.y, 0, hwnd, NULL);
+
+                            if (cmd == 1001) {
+                                CopyTestLogsToClipboard(index);
+                            }
+
+                            DestroyMenu(hMenu);
+                        }
+                    }
+                }
+                return TRUE;
+            }
+            break;
+        }
+
         default:
             return DefWindowProc(hwnd, msg, wParam, lParam);
     }
