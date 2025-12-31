@@ -2,11 +2,12 @@ CC = i686-w64-mingw32-gcc
 CFLAGS = -std=c99 -Wall -Wextra -Isrc -D_WIN32_WINNT=0x0501
 LDFLAGS = -mwindows -lcomctl32 -lgdi32 -lwininet -lws2_32
 
-SRC = src/main.c src/ui/window.c src/network/http.c src/network/gemini.c
+CORE_SRC = src/core/dom.c src/core/html.c
+SRC = src/main.c src/ui/window.c src/network/http.c src/network/gemini.c $(CORE_SRC)
 OBJ = $(SRC:.c=.o)
 TARGET = gem32.exe
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: $(TARGET)
 
@@ -15,6 +16,10 @@ $(TARGET): $(OBJ)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+test: $(CORE_SRC) tests/test_html.c
+	gcc -Isrc -o test_html tests/test_html.c $(CORE_SRC)
+	./test_html
 
 clean:
 	rm -f $(OBJ) $(TARGET)
