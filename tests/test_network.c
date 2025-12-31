@@ -58,8 +58,8 @@ static int test_gemini_impl() {
 }
 
 void run_network_tests(int *total_failed) {
-    run_test_case("TLS Handshake (google.com)", test_tls_impl, total_failed);
+    run_test_case("TLS Handshake (www.google.com)", test_tls_impl, total_failed);
     run_test_case("HTTP Fetch (google.com)", test_http_impl, total_failed);
-    run_test_case("HTTPS Fetch (google.com)", test_https_impl, total_failed);
+    run_test_case("HTTPS Fetch (www.google.com)", test_https_impl, total_failed);
     run_test_case("Gemini Fetch (geminiprotocol.net)", test_gemini_impl, total_failed);
 }
