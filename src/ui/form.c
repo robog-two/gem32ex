@@ -42,29 +42,31 @@ static char* url_encode(const char *str) {
 static void collect_inputs(node_t *root, char **buffer, size_t *size) {
     if (!root) return;
 
-    if (root->type == DOM_NODE_ELEMENT && root->tag_name && strcasecmp(root->tag_name, "input") == 0) {
-        const char *name = node_get_attr(root, "name");
-        if (name) {
-            const char *val = root->current_value ? root->current_value : node_get_attr(root, "value");
-            if (!val) val = "";
+    if (root->type == DOM_NODE_ELEMENT && root->tag_name) {
+        if (strcasecmp(root->tag_name, "input") == 0 || strcasecmp(root->tag_name, "textarea") == 0) {
+            const char *name = node_get_attr(root, "name");
+            if (name) {
+                const char *val = root->current_value ? root->current_value : node_get_attr(root, "value");
+                if (!val) val = "";
 
-            char *enc_name = url_encode(name);
-            char *enc_val = url_encode(val);
-            
-            size_t entry_len = strlen(enc_name) + strlen(enc_val) + 2; // name=val&
-            *buffer = realloc(*buffer, *size + entry_len + 1);
-            
-            if (*size > 0) {
-                strcat(*buffer, "&");
-                *size += 1;
+                char *enc_name = url_encode(name);
+                char *enc_val = url_encode(val);
+                
+                size_t entry_len = strlen(enc_name) + strlen(enc_val) + 2; 
+                *buffer = realloc(*buffer, *size + entry_len + 1);
+                
+                if (*size > 0) {
+                    strcat(*buffer, "&");
+                    *size += 1;
+                }
+                strcat(*buffer, enc_name);
+                strcat(*buffer, "=");
+                strcat(*buffer, enc_val);
+                *size += strlen(enc_name) + 1 + strlen(enc_val);
+
+                free(enc_name);
+                free(enc_val);
             }
-            strcat(*buffer, enc_name);
-            strcat(*buffer, "=");
-            strcat(*buffer, enc_val);
-            *size += strlen(enc_name) + 1 + strlen(enc_val);
-
-            free(enc_name);
-            free(enc_val);
         }
     }
 
@@ -89,12 +91,28 @@ network_response_t* form_submit(node_t *submit_node, const char *base_url, char 
         if (strstr(action, "://")) {
             strncpy(target_url, action, sizeof(target_url));
         } else {
-            // Relative (simplistic)
+            // Relative
+            strncpy(target_url, base_url, sizeof(target_url));
             if (action[0] == '/') {
-                // To root - simplified
-                snprintf(target_url, sizeof(target_url), "http://%s", action); // FIXME: Need proper domain parsing
+                // To root - find first slash after ://
+                char *p = strstr(target_url, "://");
+                if (p) {
+                    p = strchr(p + 3, '/');
+                    if (p) *p = '\0';
+                }
+                strncat(target_url, action, sizeof(target_url) - strlen(target_url) - 1);
             } else {
-                snprintf(target_url, sizeof(target_url), "%s/%s", base_url, action); 
+                // Relative to current dir - strip filename
+                char *p = strrchr(target_url, '/');
+                if (p) {
+                    // Don't strip if it's the // in http://
+                    if (*(p-1) != ':') {
+                        *(p+1) = '\0';
+                    } else {
+                        strcat(target_url, "/");
+                    }
+                }
+                strncat(target_url, action, sizeof(target_url) - strlen(target_url) - 1);
             }
         }
     } else {
