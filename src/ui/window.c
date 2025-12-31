@@ -264,29 +264,12 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
         UpdateScrollBars(hContent);
 
         if (!g_skip_history) {
-            // Handle branching history
             if (g_manual_navigation) {
-                // User manually navigated - create a new root tree
+                // User used Go button - create new root above current tree
                 history_reset(g_history, url, "Title Placeholder");
             } else {
-                // Check if this creates a new branch from current node
-                if (g_history->current && history_is_new_branch(g_history->current, url)) {
-                    // New branch - add as child of current node
-                    history_add(g_history, url, "Title Placeholder");
-                } else if (g_history->current && !history_is_new_branch(g_history->current, url)) {
-                    // Navigating to an existing child - just update current
-                    for (int i = 0; i < g_history->current->children_count; i++) {
-                        if (g_history->current->children[i] &&
-                            g_history->current->children[i]->url &&
-                            strcmp(g_history->current->children[i]->url, url) == 0) {
-                            history_navigate_to(g_history, g_history->current->children[i], url, "Title Placeholder");
-                            break;
-                        }
-                    }
-                } else {
-                    // Fallback - add normally
-                    history_add(g_history, url, "Title Placeholder");
-                }
+                // User clicked a link or form - add as child of current
+                history_add(g_history, url, "Title Placeholder");
             }
             history_ui_fetch_favicon(g_history->current);
         }

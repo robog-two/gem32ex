@@ -26,20 +26,29 @@ history_tree_t* history_create() {
 
 void history_add(history_tree_t *tree, const char *url, const char *title) {
     if (!tree) return;
+
+    // Simple: just add as child of current node
     history_node_t *node = history_node_create(url, title);
-    
+
     if (!tree->root) {
+        // First node ever
         tree->root = node;
+        tree->current = node;
+    } else if (!tree->current) {
+        // No current node? Set as root
+        tree->root = node;
+        tree->current = node;
     } else {
+        // Add as child of current
         history_node_t *curr = tree->current;
-        node->parent = curr;
         if (curr->children_count == curr->children_capacity) {
             curr->children_capacity = curr->children_capacity == 0 ? 4 : curr->children_capacity * 2;
             curr->children = realloc(curr->children, sizeof(history_node_t*) * curr->children_capacity);
         }
+        node->parent = curr;
         curr->children[curr->children_count++] = node;
+        tree->current = node;
     }
-    tree->current = node;
 }
 
 void history_node_free(history_node_t *node) {
@@ -60,35 +69,14 @@ void history_free(history_tree_t *tree) {
     free(tree);
 }
 
-// Check if target_url matches any child URL of current node
-int history_is_new_branch(history_node_t *current, const char *target_url) {
-    if (!current || !target_url) return 1;
-
-    for (int i = 0; i < current->children_count; i++) {
-        if (current->children[i] && current->children[i]->url &&
-            strcmp(current->children[i]->url, target_url) == 0) {
-            return 0;  // Found matching child - not a new branch
-        }
-    }
-    return 1;  // No matching child - this is a new branch
-}
-
-// Navigate to existing history node and create branch if needed
-void history_navigate_to(history_tree_t *tree, history_node_t *target, const char *url, const char *title) {
-    if (!tree || !target) return;
-
-    tree->current = target;
-    // If navigating forward from target (adding new content), it will be added as child via history_add
-}
-
-// Reset history: create a new root for completely new URL (manual navigation)
+// Reset history: create a new root for manual navigation (address bar)
 void history_reset(history_tree_t *tree, const char *url, const char *title) {
     if (!tree) return;
 
     // Create a new root
     history_node_t *new_root = history_node_create(url, title);
 
-    // Preserve the old tree as a child of the new root (creates parallel branch above)
+    // Preserve the old tree as a child of the new root
     if (tree->root) {
         if (new_root->children_capacity == 0) {
             new_root->children_capacity = 4;
