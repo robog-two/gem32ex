@@ -25,6 +25,7 @@ void node_free(node_t *node) {
     if (node->tag_name) free(node->tag_name);
     if (node->content) free(node->content);
     if (node->style) free(node->style);
+    if (node->image_data) free(node->image_data);
 
     attr_t *attr = node->attributes;
     while (attr) {
