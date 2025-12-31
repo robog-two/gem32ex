@@ -28,6 +28,67 @@ static void log_last_error(const char *context) {
     }
 }
 
+static int is_chunked(const char *headers) {
+    if (!headers) return 0;
+    const char *te = strstr(headers, "Transfer-Encoding:");
+    if (te) {
+        const char *end = strstr(te, "\r\n");
+        if (end) {
+            char val[64];
+            int len = (int)(end - (te + 18));
+            if (len > 63) len = 63;
+            memcpy(val, te + 18, len);
+            val[len] = '\0';
+            if (strstr(val, "chunked")) return 1;
+        }
+    }
+    return 0;
+}
+
+static void unchunk_response(network_response_t *res) {
+    if (!res || !res->data || res->size == 0) return;
+    
+    char *new_data = malloc(res->size + 1); // Max size roughly same
+    if (!new_data) return;
+    
+    size_t write_pos = 0;
+    char *p = res->data;
+    char *end = res->data + res->size;
+    
+    while (p < end) {
+        char *term = strstr(p, "\r\n");
+        if (!term) break;
+        
+        *term = '\0';
+        long chunk_len = strtol(p, NULL, 16);
+        *term = '\r'; // Restore (optional)
+        p = term + 2; // Skip \r\n
+        
+        if (chunk_len == 0) break; // End chunk
+        
+        if (p + chunk_len > end) break; // Malformed
+        
+        // Resize if needed (unlikely unless initial alloc was conservative)
+        // memcpy
+        if (write_pos + chunk_len > res->size) {
+             // Should not happen for valid chunks as chunked overhead makes src larger
+        }
+        
+        memcpy(new_data + write_pos, p, chunk_len);
+        write_pos += chunk_len;
+        p += chunk_len;
+        
+        // Skip trailing \r\n
+        if (p + 2 <= end && p[0] == '\r' && p[1] == '\n') p += 2;
+    }
+    
+    new_data[write_pos] = '\0';
+    free(res->data);
+    res->data = new_data;
+    res->size = write_pos;
+    LOG_INFO("Unchunked response to %zu bytes", res->size);
+}
+
 static network_response_t* https_fetch_raw(const char *host, int port, const char *path, const char *method, const char *body, const char *content_type) {
     LOG_INFO("HTTPS Tunneling: %s:%d%s", host, port, path);
     tls_connection_t *conn = tls_connect(host, port);
@@ -102,16 +163,18 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                 }
             }
 
-            char *ct = strstr(data, "Content-Type: ");
-            if (ct) {
-                ct += 14;
-                char *ct_end = strstr(ct, "\r\n");
-                if (ct_end) {
-                    int ct_len = (int)(ct_end - ct);
-                    res->content_type = malloc(ct_len + 1);
-                    memcpy(res->content_type, ct, ct_len);
-                    res->content_type[ct_len] = '\0';
-                    LOG_DEBUG("HTTPS Content-Type: %s", res->content_type);
+            // Headers scan for Content-Type and Transfer-Encoding
+            if (1) {
+                char *ct = strstr(data, "Content-Type: ");
+                if (ct) {
+                    ct += 14;
+                    char *ct_end = strstr(ct, "\r\n");
+                    if (ct_end) {
+                        int ct_len = (int)(ct_end - ct);
+                        res->content_type = malloc(ct_len + 1);
+                        memcpy(res->content_type, ct, ct_len);
+                        res->content_type[ct_len] = '\0';
+                    }
                 }
             }
 
@@ -137,6 +200,11 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                 memcpy(res->data, body_start, body_len);
                 res->data[body_len] = '\0';
                 res->size = body_len;
+                
+                // Handle Chunked
+                if (is_chunked(data)) {
+                    unchunk_response(res);
+                }
             }
         } else {
             LOG_WARN("HTTPS Response: Could not find end of headers");
