@@ -84,7 +84,7 @@ void render_cleanup(void) {
 
 // Detect PNG signature (89 50 4E 47 0D 0A 1A 0A)
 static int is_png(const void *data, size_t size) {
-    if (size < 8) return 0;
+    if (!data || size < 8) return 0;
     const unsigned char *bytes = (const unsigned char *)data;
     return bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G' &&
            bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A;
@@ -93,7 +93,8 @@ static int is_png(const void *data, size_t size) {
 // Extract PNG dimensions from the IHDR chunk
 // PNG format: 8 byte signature, then IHDR chunk with width/height at bytes 16-24
 static int get_png_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
-    if (size < 24 || !is_png(data, size)) return 0;
+    if (!data || size < 24 || !out_width || !out_height) return 0;
+    if (!is_png(data, size)) return 0;
 
     const unsigned char *bytes = (const unsigned char *)data;
     // IHDR chunk width is at offset 16-20 (big-endian)
@@ -111,9 +112,11 @@ static int get_png_dimensions(const void *data, size_t size, int *out_width, int
 
 // Public function for extracting image dimensions (supports PNG, others)
 void render_extract_image_dimensions(const void *data, size_t size, int *out_width, int *out_height) {
-    if (!data || !out_width || !out_height) {
-        if (out_width) *out_width = 0;
-        if (out_height) *out_height = 0;
+    // Initialize output to safe defaults
+    if (out_width) *out_width = 0;
+    if (out_height) *out_height = 0;
+
+    if (!data || size == 0 || !out_width || !out_height) {
         return;
     }
 
