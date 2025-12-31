@@ -145,6 +145,15 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
     
     int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
+
+    if (box->node->style->display == DISPLAY_INLINE && box->node->style->width <= 0) {
+        int decoration = box->node->style->padding_left + box->node->style->padding_right + 
+                         (box->node->style->border_width * 2) + 
+                         box->node->style->margin_left + box->node->style->margin_right;
+        available_width = space.available_width - decoration;
+        if (available_width < 0) available_width = 0;
+    }
+
     text_align_t align = box->node->style->text_align;
 
     layout_box_t *child = box->first_child;

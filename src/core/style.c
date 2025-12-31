@@ -72,7 +72,6 @@ void style_compute(node_t *node) {
                    strcasecmp(node->tag_name, "article") == 0 ||
                    strcasecmp(node->tag_name, "aside") == 0 ||
                    strcasecmp(node->tag_name, "blockquote") == 0 ||
-                   strcasecmp(node->tag_name, "center") == 0 ||
                    strcasecmp(node->tag_name, "div") == 0 ||
                    strcasecmp(node->tag_name, "dl") == 0 ||
                    strcasecmp(node->tag_name, "figure") == 0 ||
@@ -96,6 +95,7 @@ void style_compute(node_t *node) {
             style->margin_top = style->margin_bottom = 16;
             style->margin_left = style->margin_right = 40;
         } else if (strcasecmp(node->tag_name, "center") == 0) {
+            style->display = DISPLAY_BLOCK;
             style->text_align = TEXT_ALIGN_CENTER;
         } else if (strcasecmp(node->tag_name, "address") == 0) {
             style->font_style = FONT_STYLE_ITALIC;
