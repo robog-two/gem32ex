@@ -102,9 +102,11 @@ void test_ui_show(void) {
     ImageList_AddIcon(hImg, LoadIcon(NULL, IDI_HAND));     // Fail (X)
     TreeView_SetImageList(hTree, hImg, TVSIL_NORMAL);
 
-    HFONT hFontMono = CreateFont(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+    // Use monospaced font for the console look
+    HFONT hFontMono = CreateFont(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                  ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                                  DEFAULT_QUALITY, FIXED_PITCH | FF_MODERN, "Courier New");
+    SendMessage(hTree, WM_SETFONT, (WPARAM)hFontMono, TRUE);
 
     for (int i = 0; i < g_test_count; i++) {
         TVINSERTSTRUCT tvi = {0};
@@ -115,7 +117,6 @@ void test_ui_show(void) {
         tvi.item.iImage = g_results[i].passed ? 0 : 1;
         tvi.item.iSelectedImage = tvi.item.iImage;
         
-        // Highlight failure with bold state if supported or just the icon
         if (!g_results[i].passed) {
             tvi.item.state = TVIS_BOLD;
             tvi.item.stateMask = TVIS_BOLD;
@@ -123,13 +124,25 @@ void test_ui_show(void) {
 
         HTREEITEM hItem = TreeView_InsertItem(hTree, &tvi);
 
-        // Add logs as child
-        TVINSERTSTRUCT tvi_log = {0};
-        tvi_log.hParent = hItem;
-        tvi_log.hInsertAfter = TVI_LAST;
-        tvi_log.item.mask = TVIF_TEXT;
-        tvi_log.item.pszText = g_results[i].logs;
-        TreeView_InsertItem(hTree, &tvi_log);
+        // Add logs as children, one line per item
+        char *log_copy = strdup(g_results[i].logs);
+        char *line = strtok(log_copy, "\n");
+        while (line) {
+            // Trim trailing \r if present
+            size_t l = strlen(line);
+            if (l > 0 && line[l-1] == '\r') line[l-1] = '\0';
+            
+            if (strlen(line) > 0) {
+                TVINSERTSTRUCT tvi_log = {0};
+                tvi_log.hParent = hItem;
+                tvi_log.hInsertAfter = TVI_LAST;
+                tvi_log.item.mask = TVIF_TEXT;
+                tvi_log.item.pszText = line;
+                TreeView_InsertItem(hTree, &tvi_log);
+            }
+            line = strtok(NULL, "\n");
+        }
+        free(log_copy);
     }
 
     // Force size message to layout children

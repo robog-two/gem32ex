@@ -108,6 +108,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                 }
             }
         } else if (scRet == SEC_E_INCOMPLETE_MESSAGE) {
+            // Keep existing data and read more
             continue;
         } else {
             LOG_ERROR("InitializeSecurityContext final error: 0x%lx", scRet);
