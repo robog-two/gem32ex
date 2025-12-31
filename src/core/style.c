@@ -14,14 +14,30 @@ void style_init_default(style_t *style) {
     style->font_weight = 400; // Normal
 }
 
+static uint32_t parse_color(const char *val) {
+    if (!val) return 0;
+    if (val[0] == '#') {
+        return (uint32_t)strtol(val + 1, NULL, 16);
+    }
+    // Basic named colors
+    if (strcasecmp(val, "red") == 0) return 0xFF0000;
+    if (strcasecmp(val, "green") == 0) return 0x00FF00;
+    if (strcasecmp(val, "blue") == 0) return 0x0000FF;
+    if (strcasecmp(val, "white") == 0) return 0xFFFFFF;
+    if (strcasecmp(val, "black") == 0) return 0x000000;
+    if (strcasecmp(val, "gray") == 0) return 0x808080;
+    return 0;
+}
+
 void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
-    // Inherit font properties from parent
+    // Inherit from parent
     if (node->parent && node->parent->style) {
         node->style->font_size = node->parent->style->font_size;
         node->style->font_weight = node->parent->style->font_weight;
         node->style->color = node->parent->style->color;
+        node->style->text_align = node->parent->style->text_align;
     }
 
     style_t *style = node->style;
@@ -116,6 +132,10 @@ void style_compute(node_t *node) {
             style->height = atoi(attr->value);
         } else if (strcasecmp(attr->name, "border") == 0 && attr->value) {
             style->border_width = atoi(attr->value);
+        } else if (strcasecmp(attr->name, "color") == 0 && attr->value) {
+            style->color = parse_color(attr->value);
+        } else if (strcasecmp(attr->name, "bgcolor") == 0 && attr->value) {
+            style->bg_color = parse_color(attr->value);
         }
         attr = attr->next;
     }

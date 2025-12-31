@@ -19,7 +19,7 @@ typedef struct {
 typedef struct {
     rect_t border_box;   // Position and size including borders
     rect_t content_box;  // Inner content area
-    int baseline;        // For inline alignment
+    int baseline;        // Distance from top of box to text baseline
 } physical_fragment_t;
 
 typedef struct layout_box_s {

@@ -18,7 +18,7 @@ static HFONT get_font(style_t *style) {
 }
 
 // Implementation of core/platform.h interface
-void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height) {
+void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height, int *out_baseline) {
     if (!text || !out_width || !out_height) return;
 
     // Create a temporary DC for measurement
@@ -26,6 +26,10 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
     
     HFONT hFont = get_font(style);
     HFONT oldFont = SelectObject(hdc, hFont);
+
+    TEXTMETRIC tm;
+    GetTextMetrics(hdc, &tm);
+    if (out_baseline) *out_baseline = tm.tmAscent;
 
     RECT r = {0, 0, 0, 0};
     if (width_constraint > 0) {

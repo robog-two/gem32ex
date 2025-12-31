@@ -5,8 +5,8 @@
 #include <core/platform.h>
 
 // Mock implementation for testing
-void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height) {
-    if (!text) { *out_width = 0; *out_height = 0; return; }
+void platform_measure_text(const char *text, style_t *style, int width_constraint, int *out_width, int *out_height, int *out_baseline) {
+    if (!text) { *out_width = 0; *out_height = 0; if (out_baseline) *out_baseline = 0; return; }
     
     int len = strlen(text);
     int char_w = (style && style->font_size > 0) ? style->font_size / 2 : 8; // Approx width
@@ -23,6 +23,7 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
         *out_width = total_w;
         *out_height = char_h;
     }
+    if (out_baseline) *out_baseline = (char_h * 8) / 10; // 80% baseline
 }
 
 void print_layout(layout_box_t *box, int depth) {
