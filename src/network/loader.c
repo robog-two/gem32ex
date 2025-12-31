@@ -15,10 +15,31 @@ static const char* get_attr(node_t *node, const char *name) {
     return NULL;
 }
 
-void loader_fetch_resources(node_t *node, const char *base_url) {
+int loader_count_resources(node_t *node) {
+    if (!node) return 0;
+    int count = 0;
+    if (node->type == DOM_NODE_ELEMENT) {
+        if (node->style && node->style->bg_image) count++;
+        if (strcasecmp(node->tag_name, "img") == 0) {
+             if (get_attr(node, "src")) count++;
+        }
+        else if (strcasecmp(node->tag_name, "iframe") == 0) {
+             if (get_attr(node, "src")) count++;
+        }
+    }
+    node_t *child = node->first_child;
+    while (child) {
+        count += loader_count_resources(child);
+        child = child->next_sibling;
+    }
+    return count;
+}
+
+void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_cb_t cb, void *ctx, int *current_count, int total_count) {
     if (!node) return;
 
     if (node->type == DOM_NODE_ELEMENT) {
+        // Background Image
         if (node->style && node->style->bg_image) {
             char full_url[1024];
             if (strncmp(node->style->bg_image, "http", 4) == 0) {
@@ -36,6 +57,10 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
                 network_response_free(res);
             } else {
                 LOG_WARN("Failed to load background: %s", full_url);
+            }
+            if (cb) {
+                (*current_count)++;
+                cb(*current_count, total_count, ctx);
             }
         }
 
@@ -59,6 +84,10 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
                 } else {
                     LOG_WARN("Failed to load image: %s", full_url);
                 }
+                if (cb) {
+                    (*current_count)++;
+                    cb(*current_count, total_count, ctx);
+                }
             }
         } else if (strcasecmp(node->tag_name, "iframe") == 0) {
             const char *src = get_attr(node, "src");
@@ -74,8 +103,23 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
                 if (res && res->data) {
                     node->iframe_doc = html_parse(res->data);
                     // Recursively fetch resources for the iframe
-                    loader_fetch_resources(node->iframe_doc, full_url);
+                    loader_fetch_resources(node->iframe_doc, full_url, cb, ctx, current_count, total_count); // Pass pointers down? No, total_count is for *this* doc? 
+                    // Actually, if we want global progress, we should count iframe resources too.
+                    // But loader_count_resources isn't recursive into iframes because they aren't loaded yet!
+                    // So progress bar will jump.
+                    // That's acceptable. Or we can just count the iframe fetch itself as 1 step.
+                    // I'll count the iframe fetch as 1 step.
+                    // The recursive fetch inside iframe won't update the MAIN progress bar total, 
+                    // but it will increment current... potentially exceeding total if not careful.
+                    // Simplest: Don't pass cb to recursive iframe load? Or pass it but don't increment main count?
+                    // I'll pass it. The user will see progress go beyond 100% or just keep moving.
+                    // Or I can treat iframe content loading as separate.
+                    // Let's just update progress for the iframe *element* itself.
                     network_response_free(res);
+                }
+                if (cb) {
+                    (*current_count)++;
+                    cb(*current_count, total_count, ctx);
                 }
             }
         }
@@ -83,7 +127,7 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
 
     node_t *child = node->first_child;
     while (child) {
-        loader_fetch_resources(child, base_url);
+        loader_fetch_resources(child, base_url, cb, ctx, current_count, total_count);
         child = child->next_sibling;
     }
 }

@@ -16,9 +16,16 @@
 #define ID_BTN_GO   103
 #define ID_CONTENT  104
 #define ID_HISTORY  105
+#define ID_LOADING_PANEL 106
+#define ID_ANIM_CTRL     107
+#define ID_PROG_CTRL     108
+#define ID_STATUS_TEXT   109
 
 #define TOP_BAR_HEIGHT 30
 #define HISTORY_HEIGHT 150
+
+// Standard Shell32 Animation IDs
+#define IDR_AVI_FILECOPY 160
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -31,6 +38,7 @@ static layout_box_t *g_current_layout = NULL;
 static node_t *g_current_dom = NULL;
 node_t *g_focused_node = NULL;
 static char g_current_url[2048] = {0};
+static HMODULE g_hShell32 = NULL;
 
 // Scrollbar State
 static int g_scroll_x = 0;
@@ -65,6 +73,14 @@ static void UpdateScrollBars(HWND hwnd) {
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_history = history_create();
+    
+    // Initialize Common Controls for Animation and Progress Bar
+    INITCOMMONCONTROLSEX icex;
+    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    icex.dwICC = ICC_ANIMATE_CLASS | ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
+    InitCommonControlsEx(&icex);
+
+    g_hShell32 = LoadLibrary("shell32.dll");
 
     // Register Main Window Class
     const char className[] = "Gem32BrowserClass";
@@ -118,6 +134,23 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 
 #include "network/loader.h"
 
+static void LoaderProgressCallback(int current, int total, void *ctx) {
+    HWND hLoadingPanel = (HWND)ctx;
+    HWND hProgress = GetDlgItem(hLoadingPanel, ID_PROG_CTRL);
+    
+    if (total > 0) {
+        SendMessage(hProgress, PBM_SETRANGE, 0, MAKELPARAM(0, total));
+        SendMessage(hProgress, PBM_SETPOS, current, 0);
+    }
+    
+    // Pump messages to keep UI responsive and ANIMATION playing
+    MSG msg;
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
 static void ProcessNewContent(HWND hContent, network_response_t *res, const char *url) {
     if (!res || !res->data) {
         LOG_WARN("ProcessNewContent called with null resource or data");
@@ -125,6 +158,23 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     }
 
     LOG_INFO("Processing new content for URL: %s (%lu bytes)", url, (unsigned long)res->size);
+
+    HWND hMain = GetParent(hContent);
+    HWND hLoadingPanel = GetDlgItem(hMain, ID_LOADING_PANEL);
+    HWND hAnim = GetDlgItem(hLoadingPanel, ID_ANIM_CTRL);
+    HWND hProg = GetDlgItem(hLoadingPanel, ID_PROG_CTRL);
+
+    // Show Loading Panel, Hide Content
+    ShowWindow(hContent, SW_HIDE);
+    ShowWindow(hLoadingPanel, SW_SHOW);
+    
+    // Start Animation
+    if (g_hShell32) {
+        if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
+            SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1)); // Loop forever
+        }
+    }
+    SendMessage(hProg, PBM_SETPOS, 0, 0);
 
     // Free previous DOM and Layout
     if (g_current_layout) {
@@ -137,39 +187,52 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     }
 
     strncpy(g_current_url, url, sizeof(g_current_url)-1);
-
-    // Update Address Bar (ID_EDIT_URL is in the parent window)
-    HWND hMain = GetParent(hContent);
     SetWindowText(GetDlgItem(hMain, ID_EDIT_URL), g_current_url);
 
     g_current_dom = html_parse(res->data);
     if (g_current_dom) {
         style_compute(g_current_dom);
-        loader_fetch_resources(g_current_dom, url);
+        
+        int total = loader_count_resources(g_current_dom);
+        int current = 0;
+        
+        // Init bar
+        SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, total > 0 ? total : 1));
+        SendMessage(hProg, PBM_SETPOS, 0, 0);
+        
+        // Fetch resources (blocking with message pump)
+        loader_fetch_resources(g_current_dom, url, LoaderProgressCallback, hLoadingPanel, &current, total);
 
         RECT rect;
         GetClientRect(hContent, &rect);
-        // Pass width - vertical scrollbar width? For now full client width.
-        // Usually we want to reserve space if scrollbar is visible, but simplified:
         g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
 
-        // Update content size
+        // Update content size and scrollbars
         g_content_width = g_current_layout->fragment.border_box.width;
         g_content_height = g_current_layout->fragment.border_box.height;
         g_scroll_x = 0;
         g_scroll_y = 0;
-
         UpdateScrollBars(hContent);
 
         history_add(g_history, url, "Title Placeholder");
-
-        // Trigger repaint
-        InvalidateRect(hContent, NULL, TRUE);
     }
+
+    // Stop Animation, Hide Loading, Show Content
+    SendMessage(hAnim, ACM_STOP, 0, 0);
+    ShowWindow(hLoadingPanel, SW_HIDE);
+    ShowWindow(hContent, SW_SHOW);
+    
+    // Trigger repaint
+    InvalidateRect(hContent, NULL, TRUE);
+    UpdateWindow(hContent);
 }
 
 static void Navigate(HWND hwnd, const char *url) {
     LOG_INFO("Navigating to: %s", url);
+    
+    // Could show a "Connecting..." status here if needed, but network_fetch is blocking
+    // and usually faster than resource loading.
+    
     network_response_t *res = network_fetch(url);
     if (res) {
         ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, res->final_url ? res->final_url : url);
@@ -191,13 +254,9 @@ static void HandleClick(HWND hContent, int x, int y) {
     }
 
     node_t *node = hit->node;
-    // Find nearest element if we hit a text node
-    while (node && node->type == DOM_NODE_TEXT) {
-        node = node->parent;
-    }
+    while (node && node->type == DOM_NODE_TEXT) node = node->parent;
 
     if (node && node->type == DOM_NODE_ELEMENT && node->tag_name) {
-        // Handle Focus
         int is_editable = 0;
         if (strcasecmp(node->tag_name, "textarea") == 0) is_editable = 1;
         else if (strcasecmp(node->tag_name, "input") == 0) {
@@ -250,7 +309,6 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SCROLLINFO si = { sizeof(SCROLLINFO), SIF_ALL, 0, 0, 0, 0, 0 };
             GetScrollInfo(hwnd, SB_VERT, &si);
             int page = si.nPage;
-            
             switch (action) {
                 case SB_LINEUP: newPos -= 20; break;
                 case SB_LINEDOWN: newPos += 20; break;
@@ -260,10 +318,8 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             }
             if (newPos < 0) newPos = 0;
             if (newPos > g_content_height - (int)page) newPos = g_content_height - (int)page;
-            if (newPos < 0) newPos = 0; // If content < page
-
+            if (newPos < 0) newPos = 0;
             if (newPos != g_scroll_y) {
-                // ScrollWindowEx could be used for performance, but full repaint is simpler for now
                 g_scroll_y = newPos;
                 SetScrollPos(hwnd, SB_VERT, g_scroll_y, TRUE);
                 InvalidateRect(hwnd, NULL, TRUE);
@@ -276,10 +332,9 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SCROLLINFO si = { sizeof(SCROLLINFO), SIF_ALL, 0, 0, 0, 0, 0 };
             GetScrollInfo(hwnd, SB_HORZ, &si);
             int page = si.nPage;
-            
             switch (action) {
-                case SB_LINEUP: newPos -= 20; break; // Left
-                case SB_LINEDOWN: newPos += 20; break; // Right
+                case SB_LINEUP: newPos -= 20; break;
+                case SB_LINEDOWN: newPos += 20; break;
                 case SB_PAGEUP: newPos -= page; break;
                 case SB_PAGEDOWN: newPos += page; break;
                 case SB_THUMBTRACK: newPos = HIWORD(wParam); break;
@@ -287,7 +342,6 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             if (newPos < 0) newPos = 0;
             if (newPos > g_content_width - (int)page) newPos = g_content_width - (int)page;
             if (newPos < 0) newPos = 0;
-
             if (newPos != g_scroll_x) {
                 g_scroll_x = newPos;
                 SetScrollPos(hwnd, SB_HORZ, g_scroll_x, TRUE);
@@ -297,18 +351,13 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         }
         case WM_MOUSEWHEEL: {
             int delta = (short)HIWORD(wParam);
-            // delta 120 = 1 tick. 
-            // scroll 3 lines per tick. ~60px.
             int scrollAmt = -(delta / 120) * 60;
-            SendMessage(hwnd, WM_VSCROLL, scrollAmt > 0 ? SB_LINEDOWN : SB_LINEUP, 0); 
-            // Better: calculate directly
             int newPos = g_scroll_y + scrollAmt;
             RECT rc; GetClientRect(hwnd, &rc);
             int max = g_content_height - (rc.bottom - rc.top);
             if (newPos < 0) newPos = 0;
             if (newPos > max) newPos = max;
             if (newPos < 0) newPos = 0;
-            
             if (newPos != g_scroll_y) {
                 g_scroll_y = newPos;
                 SetScrollPos(hwnd, SB_VERT, g_scroll_y, TRUE);
@@ -339,17 +388,13 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
-
-            // Basic font setup
             HFONT hFont = GetStockObject(DEFAULT_GUI_FONT);
             SelectObject(hdc, hFont);
-
             if (g_current_layout) {
                 render_tree(hdc, g_current_layout, -g_scroll_x, -g_scroll_y);
             } else {
                 TextOut(hdc, 10, 10, "No content loaded.", 18);
             }
-
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -360,49 +405,24 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-        case WM_CREATE:
-            CreateWindow(
-                "BUTTON", "*",
-                WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-                0, 0, 0, 0,
-                hwnd, (HMENU)ID_BTN_STAR,
-                ((LPCREATESTRUCT)lParam)->hInstance, NULL
-            );
+        case WM_CREATE: {
+            CreateWindow("BUTTON", "*", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)ID_BTN_STAR, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            CreateWindow("EDIT", "http://frogfind.com", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)ID_EDIT_URL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            CreateWindow("BUTTON", "Go", WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)ID_BTN_GO, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 
-            CreateWindow(
-                "EDIT", "http://frogfind.com",
-                WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
-                0, 0, 0, 0,
-                hwnd, (HMENU)ID_EDIT_URL,
-                ((LPCREATESTRUCT)lParam)->hInstance, NULL
-            );
+            // Loading Panel (Container)
+            HWND hLoading = CreateWindow("STATIC", "", WS_CHILD | WS_BORDER | SS_NOTIFY, 0, 0, 300, 150, hwnd, (HMENU)ID_LOADING_PANEL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            // Animation Control
+            CreateWindow(ANIMATE_CLASS, NULL, WS_CHILD | WS_VISIBLE | ACS_CENTER | ACS_TRANSPARENT, 10, 10, 280, 80, hLoading, (HMENU)ID_ANIM_CTRL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            // Status Text
+            CreateWindow("STATIC", "Downloading resources...", WS_CHILD | WS_VISIBLE | SS_CENTER, 10, 95, 280, 20, hLoading, (HMENU)ID_STATUS_TEXT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            // Progress Bar
+            CreateWindow(PROGRESS_CLASS, NULL, WS_CHILD | WS_VISIBLE | PBS_SMOOTH, 10, 120, 280, 20, hLoading, (HMENU)ID_PROG_CTRL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 
-            CreateWindow(
-                "BUTTON", "Go",
-                WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-                0, 0, 0, 0,
-                hwnd, (HMENU)ID_BTN_GO,
-                ((LPCREATESTRUCT)lParam)->hInstance, NULL
-            );
-
-            // Use our custom class for content
-            CreateWindow(
-                "Gem32ContentClass", NULL,
-                WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL,
-                0, 0, 0, 0,
-                hwnd, (HMENU)ID_CONTENT,
-                ((LPCREATESTRUCT)lParam)->hInstance, NULL
-            );
-
-            CreateWindow(
-                "STATIC", "Git-Style History Tree",
-                WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER,
-                0, 0, 0, 0,
-                hwnd, (HMENU)ID_HISTORY,
-                ((LPCREATESTRUCT)lParam)->hInstance, NULL
-            );
+            CreateWindow("Gem32ContentClass", NULL, WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL, 0, 0, 0, 0, hwnd, (HMENU)ID_CONTENT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+            CreateWindow("STATIC", "Git-Style History Tree", WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER, 0, 0, 0, 0, hwnd, (HMENU)ID_HISTORY, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
             break;
-
+        }
         case WM_COMMAND:
             if (LOWORD(wParam) == ID_BTN_GO) {
                 char url[1024];
@@ -415,19 +435,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 MessageBox(hwnd, "Bookmarked!", "Success", MB_OK);
             }
             break;
-
         case WM_SIZE:
             ResizeChildWindows(hwnd, LOWORD(lParam), HIWORD(lParam));
             break;
-
         case WM_CLOSE:
             DestroyWindow(hwnd);
             break;
-
         case WM_DESTROY:
+            if (g_hShell32) FreeLibrary(g_hShell32);
             PostQuitMessage(0);
             break;
-
         default:
             return DefWindowProc(hwnd, msg, wParam, lParam);
     }
@@ -445,6 +462,7 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
     HWND hGo = GetDlgItem(hwnd, ID_BTN_GO);
     HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
     HWND hHistory = GetDlgItem(hwnd, ID_HISTORY);
+    HWND hLoading = GetDlgItem(hwnd, ID_LOADING_PANEL);
 
     if (hStar) MoveWindow(hStar, 0, topBarY, btnSize, btnSize, TRUE);
     if (hUrl) MoveWindow(hUrl, urlX, topBarY, urlWidth, btnSize, TRUE);
@@ -453,9 +471,17 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
     int contentY = TOP_BAR_HEIGHT;
     int historyY = height - HISTORY_HEIGHT;
     int contentHeight = historyY - contentY;
-
     if (contentHeight < 0) contentHeight = 0;
 
     if (hContent) MoveWindow(hContent, 0, contentY, width, contentHeight, TRUE);
     if (hHistory) MoveWindow(hHistory, 0, historyY, width, HISTORY_HEIGHT, TRUE);
+
+    // Center Loading Panel
+    if (hLoading) {
+        int panelW = 300;
+        int panelH = 150;
+        int panelX = (width - panelW) / 2;
+        int panelY = (height - panelH) / 2;
+        MoveWindow(hLoading, panelX, panelY, panelW, panelH, TRUE);
+    }
 }
