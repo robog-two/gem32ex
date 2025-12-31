@@ -24,6 +24,7 @@ typedef struct node_s {
     style_t *style;
     void *image_data; // Pointer to decoded image or raw data
     size_t image_size;
+    struct node_s *iframe_doc; // Embedded DOM tree for iframes
     struct node_s *first_child;
     struct node_s *last_child;
     struct node_s *next_sibling;

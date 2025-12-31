@@ -26,6 +26,7 @@ void node_free(node_t *node) {
     if (node->content) free(node->content);
     if (node->style) free(node->style);
     if (node->image_data) free(node->image_data);
+    if (node->iframe_doc) node_free(node->iframe_doc);
 
     attr_t *attr = node->attributes;
     while (attr) {
