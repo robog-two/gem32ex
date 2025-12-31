@@ -235,7 +235,12 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
         box->fragment.border_box.width = 100;
     } else {
-        box->fragment.border_box.width = 0;
+        if (style->display == DISPLAY_INLINE) {
+             box->fragment.border_box.width = space.available_width - ml - mr;
+             if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
+        } else {
+             box->fragment.border_box.width = 0;
+        }
     }
 
     box->fragment.content_box.width = box->fragment.border_box.width - (bw * 2 + pl + pr);
