@@ -78,9 +78,6 @@ static void flush_line(line_info_t *line, int x_start, int *y_cursor, int availa
             child->fragment.border_box.y = baseline_y - child->fragment.baseline;
         } else {
             child->fragment.border_box.y = baseline_y - child->fragment.border_box.height;
-            if (child->node->tag_name && strcasecmp(child->node->tag_name, "img") == 0) {
-                LOG_DEBUG("IMG in line: x=%d y=%d w=%d h=%d", child->fragment.border_box.x, child->fragment.border_box.y, child->fragment.border_box.width, child->fragment.border_box.height);
-            }
         }
 
         current_x += child->fragment.border_box.width;
@@ -137,6 +134,20 @@ static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, in
         while (child) {
             layout_prepare_inline_item(child, line, x_start, y_cursor, available_width, align, space);
             child = child->next_sibling;
+        }
+    } else if (item->node->tag_name && (strcasecmp(item->node->tag_name, "img") == 0 || strcasecmp(item->node->tag_name, "iframe") == 0)) {
+        // Replaced elements (img, iframe) are intrinsic size - don't compute, just use their fixed dims
+        int child_w = item->fragment.border_box.width;
+        int child_h = item->fragment.border_box.height;
+
+        if (line->width + child_w > available_width && line->count > 0) {
+            flush_line(line, x_start, y_cursor, available_width, align);
+        }
+
+        if (line->count < MAX_LINE_FRAGMENTS) {
+            line->items[line->count++] = item;
+            line->width += child_w;
+            if (child_h > line->max_ascent) line->max_ascent = child_h;
         }
     } else {
         // Atomic inline-block or other
@@ -272,7 +283,6 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         } else {
             box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
         }
-        LOG_DEBUG("IMG/IFRAME width: style=%d intrinsic=%d final=%d", style->width, box->node->image_width, box->fragment.border_box.width);
     } else if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
