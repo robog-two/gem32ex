@@ -226,7 +226,8 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
 
     // Check for zero dimensions - would result in invisible image
     if (w <= 0 || h <= 0) {
-        LOG_WARN("Image has zero dimensions: %dx%d (image will be invisible)", w, h);
+        LOG_WARN("Image has zero dimensions: w=%d, h=%d (image will be invisible at position %d,%d)", w, h, x, y);
+        LOG_WARN("Image data: %p, size: %lu bytes", data, (unsigned long)size);
         return;
     }
 
