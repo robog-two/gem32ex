@@ -78,6 +78,9 @@ static void flush_line(line_info_t *line, int x_start, int *y_cursor, int availa
             child->fragment.border_box.y = baseline_y - child->fragment.baseline;
         } else {
             child->fragment.border_box.y = baseline_y - child->fragment.border_box.height;
+            if (child->node->tag_name && strcasecmp(child->node->tag_name, "img") == 0) {
+                LOG_DEBUG("IMG in line: x=%d y=%d w=%d h=%d", child->fragment.border_box.x, child->fragment.border_box.y, child->fragment.border_box.width, child->fragment.border_box.height);
+            }
         }
 
         current_x += child->fragment.border_box.width;
@@ -269,6 +272,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         } else {
             box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
         }
+        LOG_DEBUG("IMG/IFRAME width: style=%d intrinsic=%d final=%d", style->width, box->node->image_width, box->fragment.border_box.width);
     } else if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
