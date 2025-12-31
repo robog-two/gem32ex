@@ -145,6 +145,34 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
                 SelectObject(hdc, oldPen);
                 DeleteObject(hPen);
             }
+
+            // Render input value
+            if (box->node->tag_name && strcasecmp(box->node->tag_name, "input") == 0) {
+                const char *val = box->node->current_value ? box->node->current_value : node_get_attr(box->node, "value");
+                if (val && strlen(val) > 0) {
+                    set_color_from_style(hdc, box->node->style);
+                    SetBkMode(hdc, TRANSPARENT);
+                    HFONT hFont = get_font(box->node->style);
+                    HFONT oldFont = SelectObject(hdc, hFont);
+                    
+                    int bw = box->node->style->border_width;
+                    RECT r = {
+                        x + box->node->style->padding_left + bw, 
+                        y + box->node->style->padding_top + bw, 
+                        x + w - box->node->style->padding_right - bw, 
+                        y + h - box->node->style->padding_bottom - bw
+                    };
+                    
+                    UINT format = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
+                    if (box->node->style->text_align == TEXT_ALIGN_CENTER) format = DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
+                    else if (box->node->style->text_align == TEXT_ALIGN_RIGHT) format = DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
+                    
+                    DrawText(hdc, val, -1, &r, format);
+                    
+                    SelectObject(hdc, oldFont);
+                    DeleteObject(hFont);
+                }
+            }
         }
     } else if (box->node->type == DOM_NODE_TEXT && box->node->content) {
         set_color_from_style(hdc, box->node->style);

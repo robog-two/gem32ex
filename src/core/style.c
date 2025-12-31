@@ -179,28 +179,36 @@ void style_compute(node_t *node) {
                    strcasecmp(node->tag_name, "select") == 0 ||
                    strcasecmp(node->tag_name, "textarea") == 0 ||
                    strcasecmp(node->tag_name, "button") == 0) {
-            style->display = DISPLAY_INLINE; // Should be inline-block, treating as inline for now
-            style->border_width = 1; // Basic border
+            style->display = DISPLAY_INLINE; // Treating as inline for now
+            style->border_width = 1;
             style->padding_top = style->padding_bottom = 2;
             style->padding_left = style->padding_right = 4;
             
-            // Modern defaults for size if not specified
-            if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "select") == 0) {
-                 style->width = 150; // Standard input width approx
-                 style->height = 20;
-            } else if (strcasecmp(node->tag_name, "button") == 0) {
-                 style->height = 24;
-            }
-
-            if (strcasecmp(node->tag_name, "button") == 0) {
-                 style->bg_color = 0xDDDDDD; 
-                 style->text_align = TEXT_ALIGN_CENTER;
-            } else if (strcasecmp(node->tag_name, "input") == 0) {
+            if (strcasecmp(node->tag_name, "input") == 0) {
                  const char *type = node_get_attr(node, "type");
                  if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) {
-                     style->bg_color = 0xDDDDDD;
+                     style->bg_color = 0xE1E1E1;
                      style->text_align = TEXT_ALIGN_CENTER;
+                     style->width = 80;
+                     style->height = 24;
+                 } else {
+                     style->bg_color = 0xFFFFFF;
+                     style->width = 150;
+                     style->height = 20;
                  }
+            } else if (strcasecmp(node->tag_name, "button") == 0) {
+                 style->bg_color = 0xE1E1E1; 
+                 style->text_align = TEXT_ALIGN_CENTER;
+                 style->width = 80;
+                 style->height = 24;
+            } else if (strcasecmp(node->tag_name, "select") == 0) {
+                 style->bg_color = 0xFFFFFF;
+                 style->width = 120;
+                 style->height = 22;
+            } else if (strcasecmp(node->tag_name, "textarea") == 0) {
+                 style->bg_color = 0xFFFFFF;
+                 style->width = 300;
+                 style->height = 100;
             }
         }
 
@@ -267,6 +275,9 @@ void style_compute(node_t *node) {
             else if (strcasecmp(attr->value, "left") == 0) style->text_align = TEXT_ALIGN_LEFT;
         } else if (strcasecmp(attr->name, "width") == 0 && attr->value) {
             style->width = atoi(attr->value);
+        } else if (strcasecmp(attr->name, "size") == 0 && attr->value && 
+                   node->tag_name && strcasecmp(node->tag_name, "input") == 0) {
+            style->width = atoi(attr->value) * 8 + 10; // Approx 8px per char + some padding
         } else if (strcasecmp(attr->name, "height") == 0 && attr->value) {
             style->height = atoi(attr->value);
         } else if (strcasecmp(attr->name, "border") == 0 && attr->value) {

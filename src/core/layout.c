@@ -210,12 +210,13 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
     
     // Resolve Width
-    if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
-        style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
-        if (style->width > 0) box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
-        else box->fragment.border_box.width = space.available_width;
+    if (style->width > 0) {
+        box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
+    } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
+               style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
+        box->fragment.border_box.width = space.available_width;
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
-        box->fragment.border_box.width = (style->width > 0) ? style->width : 100;
+        box->fragment.border_box.width = 100; // Default image width
     } else {
         // Inline container default width 0, grows with content
         box->fragment.border_box.width = 0;
@@ -274,7 +275,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         layout_inline_children(box, space, &child_y);
         
         // For inline containers (like <b>, <span>), grow width to fit content
-        if (style->display == DISPLAY_INLINE) {
+        if (style->display == DISPLAY_INLINE && style->width <= 0) {
             int max_x = 0;
             layout_box_t *k = box->first_child;
             while (k) {
