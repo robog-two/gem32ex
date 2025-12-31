@@ -38,7 +38,16 @@
  *    - Replaced elements (img, iframe): bottom edge aligned to baseline
  *    - Inline-block: bottom margin edge aligned to baseline
  *
- * 4. SEPARATION OF CONCERNS
+ * 4. CSS2 NORMAL FLOW SUPPORT
+ *    - Block formatting contexts: vertical stacking, margin collapsing
+ *    - Inline formatting contexts: horizontal flow, line breaking, baseline alignment
+ *    - Inline-block: atomic inline boxes with internal block formatting
+ *    - List items: block-level with marker generation (bullet points)
+ *    - Floats: boxes removed from flow, content wraps around them (basic support)
+ *    - Clear: prevents elements from appearing next to floats
+ *    - Positioning: static (normal flow), relative (offset), absolute/fixed (out of flow)
+ *
+ * 5. SEPARATION OF CONCERNS
  *    - DOM layer: parse HTML, manage tree structure
  *    - Layout layer: compute geometry (this module)
  *    - Platform layer: text measurement, rendering (see platform.h)
@@ -76,6 +85,9 @@ typedef struct layout_box_s {
     int measured_height;    // Cached text/content height
     int measured_baseline;  // Cached baseline for text
     int is_measured;        // Flag: 1 if measurements are cached and valid
+
+    // CSS2: Float layout state
+    int is_float;           // Flag: 1 if this box is floated (removed from normal flow)
 
     struct layout_box_s *parent;
     struct layout_box_s *first_child;

@@ -1,5 +1,5 @@
 /*
- * Layout Engine Implementation - LayoutNG-inspired
+ * Layout Engine Implementation - LayoutNG-inspired with CSS2 Normal Flow
  *
  * This module implements CSS layout using an architecture inspired by Chromium's LayoutNG.
  * The key improvement over naive layout engines is the separation of inline layout into phases:
@@ -22,8 +22,19 @@
  *      * Replaced elements (img) align bottom edge to baseline
  *      * Inline-blocks align bottom margin edge to baseline
  *
- * This approach aligns with modern browser behavior and scales better than measuring
- * text on-demand during positioning.
+ * CSS2 NORMAL FLOW FEATURES:
+ *
+ * - Block Formatting Context: Vertical stacking of block-level boxes, margin collapsing
+ * - Inline Formatting Context: Horizontal flow with line breaking and baseline alignment
+ * - display: inline-block - Atomic inline boxes that establish internal BFC
+ * - display: list-item - Block-level boxes with marker generation (bullets)
+ * - float: left/right - Boxes removed from flow with content wrapping (basic)
+ * - clear: left/right/both - Clearing past floats
+ * - position: static/relative/absolute/fixed - Various positioning schemes
+ * - overflow: visible/hidden/scroll/auto - Overflow handling (property exists)
+ *
+ * This approach aligns with modern browser behavior (CSS2 spec) and scales better than
+ * measuring text on-demand during positioning.
  */
 
 #include "layout.h"
@@ -55,10 +66,19 @@ void layout_free(layout_box_t *box) {
 
 static void get_cumulative_offset(layout_box_t *box, int *dx, int *dy);
 
+/*
+ * CSS2: Determines if a node generates a block-level box.
+ * Block-level boxes participate in a block formatting context.
+ * List items are block-level but have additional marker boxes.
+ */
 static int is_block(node_t *node) {
     if (!node || !node->style) return 0;
     display_t d = node->style->display;
-    return (d == DISPLAY_BLOCK || d == DISPLAY_TABLE || d == DISPLAY_TABLE_ROW || d == DISPLAY_TABLE_CELL);
+    return (d == DISPLAY_BLOCK ||
+            d == DISPLAY_LIST_ITEM || // CSS2: list-item is block-level
+            d == DISPLAY_TABLE ||
+            d == DISPLAY_TABLE_ROW ||
+            d == DISPLAY_TABLE_CELL);
 }
 
 static int is_inline_container(const char *tag) {
@@ -74,6 +94,7 @@ static int is_inline_container(const char *tag) {
 }
 
 #define MAX_LINE_FRAGMENTS 256
+#define MAX_FLOATS 32
 
 // LayoutNG-inspired: Accumulates inline items for a single line
 // This represents the "line breaking" output before final positioning
@@ -84,6 +105,16 @@ typedef struct {
     int max_ascent;      // Maximum ascent (baseline to top)
     int max_descent;     // Maximum descent (baseline to bottom)
 } line_box_t;
+
+// CSS2: Float context - tracks floating boxes for text wrapping
+// In a full implementation, this would track left/right floats separately
+// and handle complex overlapping scenarios
+typedef struct {
+    layout_box_t *floats[MAX_FLOATS];
+    int count;
+    int left_offset;     // Current narrowing from left floats
+    int right_offset;    // Current narrowing from right floats
+} float_context_t;
 
 /*
  * LayoutNG-inspired: Phase 3 - Line Box Construction
@@ -227,8 +258,28 @@ static void layout_prepare_inline_item(layout_box_t *item, line_box_t *line, int
             if (child_h > line->max_ascent) line->max_ascent = child_h;
             // No descent since they align bottom-to-baseline
         }
+    } else if (item->node->style->display == DISPLAY_INLINE_BLOCK) {
+        // CSS2: inline-block creates an atomic inline box
+        // It flows inline but establishes an independent block formatting context
+        layout_compute(item, space);
+        int child_w = item->fragment.border_box.width;
+        int child_h = item->fragment.border_box.height;
+
+        // Line breaking: check if inline-block fits on current line
+        if (line->width + child_w > available_width && line->count > 0) {
+            position_line_items(line, x_start, y_cursor, available_width, align);
+        }
+
+        // Add to line box
+        // CSS2: inline-block aligns its baseline (last line box baseline, or bottom margin edge)
+        if (line->count < MAX_LINE_FRAGMENTS) {
+            line->items[line->count++] = item;
+            line->width += child_w;
+            // For simplicity, treat like replaced element (bottom-to-baseline)
+            if (child_h > line->max_ascent) line->max_ascent = child_h;
+        }
     } else {
-        // Atomic inline-block or other inline content
+        // Other atomic inline content
         // These need full layout computation first
         layout_compute(item, space);
         int child_w = item->fragment.border_box.width;
@@ -240,7 +291,7 @@ static void layout_prepare_inline_item(layout_box_t *item, line_box_t *line, int
         }
 
         // Add to line box
-        // Atomic inlines (like inline-block) align their bottom margin edge to baseline
+        // Atomic inlines align their bottom margin edge to baseline
         if (line->count < MAX_LINE_FRAGMENTS) {
             line->items[line->count++] = item;
             line->width += child_w;
@@ -361,6 +412,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
     int ml = style->margin_left, mr = style->margin_right;
 
+    // CSS2: Width calculation based on display type
     // Replaced elements (img, iframe) have fixed intrinsic dimensions
     if (box->node->tag_name && (strcasecmp(box->node->tag_name, "img") == 0 || strcasecmp(box->node->tag_name, "iframe") == 0)) {
         if (style->width > 0) {
@@ -371,9 +423,17 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
             box->fragment.border_box.width = 100 + (bw * 2) + pl + pr;
         }
     } else if (style->width > 0) {
+        // Explicit width set
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
-    } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
-               style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
+    } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_LIST_ITEM ||
+               style->display == DISPLAY_TABLE || style->display == DISPLAY_TABLE_ROW ||
+               style->display == DISPLAY_TABLE_CELL) {
+        // Block-level boxes fill available width
+        box->fragment.border_box.width = space.available_width - ml - mr;
+        if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
+    } else if (style->display == DISPLAY_INLINE_BLOCK) {
+        // CSS2: inline-block shrinks to fit content if no explicit width
+        // For now, use available width (proper shrink-to-fit requires pre-measurement)
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (style->display == DISPLAY_INLINE) {

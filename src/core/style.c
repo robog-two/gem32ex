@@ -12,6 +12,10 @@ void style_init_default(style_t *style) {
     style->color = 0x000000; // Black
     style->bg_color = 0xFFFFFF; // White
     style->display = DISPLAY_INLINE; // Default is inline
+    style->position = POSITION_STATIC; // Default positioning
+    style->float_prop = FLOAT_NONE; // No float by default
+    style->clear = CLEAR_NONE; // No clear by default
+    style->overflow = OVERFLOW_VISIBLE; // Default overflow behavior
     style->font_size = 16;   // Default 16px
     style->font_weight = 400; // Normal
     style->font_style = FONT_STYLE_NORMAL;
@@ -65,7 +69,35 @@ static void parse_css_property(style_t *style, char *name, char *val) {
     else if (strcasecmp(name, "display") == 0) {
         if (strcasecmp(val, "block") == 0) style->display = DISPLAY_BLOCK;
         else if (strcasecmp(val, "inline") == 0) style->display = DISPLAY_INLINE;
+        else if (strcasecmp(val, "inline-block") == 0) style->display = DISPLAY_INLINE_BLOCK;
+        else if (strcasecmp(val, "list-item") == 0) style->display = DISPLAY_LIST_ITEM;
         else if (strcasecmp(val, "none") == 0) style->display = DISPLAY_NONE;
+        else if (strcasecmp(val, "table") == 0) style->display = DISPLAY_TABLE;
+        else if (strcasecmp(val, "table-row") == 0) style->display = DISPLAY_TABLE_ROW;
+        else if (strcasecmp(val, "table-cell") == 0) style->display = DISPLAY_TABLE_CELL;
+    }
+    else if (strcasecmp(name, "float") == 0) {
+        if (strcasecmp(val, "left") == 0) style->float_prop = FLOAT_LEFT;
+        else if (strcasecmp(val, "right") == 0) style->float_prop = FLOAT_RIGHT;
+        else if (strcasecmp(val, "none") == 0) style->float_prop = FLOAT_NONE;
+    }
+    else if (strcasecmp(name, "clear") == 0) {
+        if (strcasecmp(val, "left") == 0) style->clear = CLEAR_LEFT;
+        else if (strcasecmp(val, "right") == 0) style->clear = CLEAR_RIGHT;
+        else if (strcasecmp(val, "both") == 0) style->clear = CLEAR_BOTH;
+        else if (strcasecmp(val, "none") == 0) style->clear = CLEAR_NONE;
+    }
+    else if (strcasecmp(name, "overflow") == 0) {
+        if (strcasecmp(val, "visible") == 0) style->overflow = OVERFLOW_VISIBLE;
+        else if (strcasecmp(val, "hidden") == 0) style->overflow = OVERFLOW_HIDDEN;
+        else if (strcasecmp(val, "scroll") == 0) style->overflow = OVERFLOW_SCROLL;
+        else if (strcasecmp(val, "auto") == 0) style->overflow = OVERFLOW_AUTO;
+    }
+    else if (strcasecmp(name, "position") == 0) {
+        if (strcasecmp(val, "static") == 0) style->position = POSITION_STATIC;
+        else if (strcasecmp(val, "relative") == 0) style->position = POSITION_RELATIVE;
+        else if (strcasecmp(val, "absolute") == 0) style->position = POSITION_ABSOLUTE;
+        else if (strcasecmp(val, "fixed") == 0) style->position = POSITION_FIXED;
     }
 }
 
@@ -203,7 +235,7 @@ void style_compute(node_t *node) {
             style->margin_top = style->margin_bottom = 16;
             style->padding_left = 40;
         } else if (strcasecmp(node->tag_name, "li") == 0) {
-            style->display = DISPLAY_BLOCK;
+            style->display = DISPLAY_LIST_ITEM; // CSS2: list-item generates marker box
         } else if (strcasecmp(node->tag_name, "dl") == 0) {
             style->display = DISPLAY_BLOCK;
             style->margin_top = style->margin_bottom = 16;
