@@ -12,6 +12,12 @@ typedef enum {
     DISPLAY_TABLE_CELL
 } display_t;
 
+typedef enum {
+    TEXT_ALIGN_LEFT,
+    TEXT_ALIGN_CENTER,
+    TEXT_ALIGN_RIGHT
+} text_align_t;
+
 typedef struct {
     uint32_t color;
     uint32_t bg_color;
@@ -20,6 +26,7 @@ typedef struct {
     int border_width;
     int width, height;
     display_t display;
+    text_align_t text_align;
 } style_t;
 
 struct node_s;

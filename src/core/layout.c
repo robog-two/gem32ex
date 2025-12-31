@@ -22,28 +22,68 @@ void layout_free(layout_box_t *box) {
     free(box);
 }
 
-// Helper to check if a node is block-level
 static int is_block(node_t *node) {
     if (!node || !node->style) return 0;
     return (node->style->display == DISPLAY_BLOCK || 
             node->style->display == DISPLAY_TABLE || 
             node->style->display == DISPLAY_TABLE_ROW ||
-            node->style->display == DISPLAY_TABLE_CELL); // Cells behave like blocks inside rows
+            node->style->display == DISPLAY_TABLE_CELL);
 }
 
-// Helper to get preferred width of an inline leaf (text/img)
 static int get_inline_width(node_t *node) {
     if (node->type == DOM_NODE_TEXT && node->content) {
-        return strlen(node->content) * 8; // Approx 8px per char
+        return strlen(node->content) * 8; 
     }
     if (node->type == DOM_NODE_ELEMENT && node->tag_name && strcasecmp(node->tag_name, "img") == 0) {
-        return 100; // Placeholder
+        return 100; 
     }
     return 0;
 }
 
-// Compute layout for a box given its position and max available width.
-// Returns the dimensions (w, h) effectively occupied by this box.
+// Inline Line Buffer
+#define MAX_LINE_ITEMS 128
+typedef struct {
+    layout_box_t *items[MAX_LINE_ITEMS];
+    int count;
+    int current_width;
+    int max_height;
+} line_buffer_t;
+
+static void flush_line(line_buffer_t *line, int x_start, int y, int total_width, text_align_t align) {
+    if (line->count == 0) return;
+
+    int free_space = total_width - line->current_width;
+    int start_offset = 0;
+
+    if (align == TEXT_ALIGN_CENTER) start_offset = free_space / 2;
+    else if (align == TEXT_ALIGN_RIGHT) start_offset = free_space;
+    
+    if (start_offset < 0) start_offset = 0; // Don't shift left out of box
+
+    int current_x = x_start + start_offset;
+    
+    for (int i = 0; i < line->count; i++) {
+        layout_box_t *box = line->items[i];
+        box->dimensions.x = current_x;
+        box->dimensions.y = y + (line->max_height - box->dimensions.height); // Bottom align roughly
+        // Better: Top align
+        box->dimensions.y = y; 
+        
+        current_x += box->dimensions.width;
+    }
+
+    // Reset line
+    line->count = 0;
+    line->current_width = 0;
+    line->max_height = 0;
+}
+
+rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_width);
+
+void layout_compute_internal_void(layout_box_t *box, int x, int y, int available_width) {
+    layout_compute_internal(box, x, y, available_width);
+}
+
 rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_width) {
     rect_t used_dim = {x, y, 0, 0};
     if (!box || !box->node || !box->node->style) return used_dim;
@@ -51,7 +91,6 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
 
     style_t *style = box->node->style;
     
-    // 1. Determine Box Model Metrics
     int mt = style->margin_top;
     int mb = style->margin_bottom;
     int ml = style->margin_left;
@@ -62,35 +101,28 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
     int pr = style->padding_right;
     int bw = style->border_width;
 
-    // 2. Determine Own Dimensions (Outer)
-    // Position is absolute
     box->dimensions.x = x + ml;
     box->dimensions.y = y + mt;
 
     int content_available_width = available_width - (ml + mr + pl + pr + (bw * 2));
     if (content_available_width < 0) content_available_width = 0;
 
-    // Set Content Width
     if (is_block(box->node)) {
-        // Block: Fill width
         if (style->width > 0) box->dimensions.width = style->width;
         else box->dimensions.width = content_available_width;
     } else {
-        // Inline: Width is 0 initially, grows with content
         box->dimensions.width = get_inline_width(box->node);
     }
 
-    // 3. Layout Children
-    int child_x = box->dimensions.x + bw + pl;
-    int child_y = box->dimensions.y + bw + pt;
-    int max_child_w = available_width - (ml + mr); // Constraint for children wrapping
+    int child_x_start = box->dimensions.x + bw + pl;
+    int cursor_y = box->dimensions.y + bw + pt;
+    int max_child_w = box->dimensions.width - (pl + pr + bw*2); // Inner content width of box
     if (max_child_w < 0) max_child_w = 0;
 
-    int cursor_x = child_x;
-    int cursor_y = child_y;
-    int line_height = 0;
+    // Line buffering for inline flow
+    line_buffer_t line = {0};
 
-    // Table Handling (Simple)
+    // Table Handling
     int cell_count = 0;
     if (style->display == DISPLAY_TABLE_ROW) {
         layout_box_t *c = box->first_child;
@@ -100,92 +132,90 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
     layout_box_t *child = box->first_child;
     while (child) {
         if (style->display == DISPLAY_TABLE_ROW && child->node->style->display == DISPLAY_TABLE_CELL) {
-            // Table Cell: Fixed width column
-            int cell_w = box->dimensions.width / (cell_count > 0 ? cell_count : 1);
-            // Cells act like blocks in a fixed grid
-            layout_compute_internal(child, cursor_x, child_y, cell_w); 
-            // Force width
-            child->dimensions.width = cell_w - (child->node->style->margin_left + child->node->style->margin_right); 
-            cursor_x += cell_w;
-            if (child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom > line_height)
-                line_height = child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom;
+            // ... Table cell logic (omitted for brevity, assume block-like grid) ...
+            // Re-implement basic table grid
+             int cell_w = box->dimensions.width / (cell_count > 0 ? cell_count : 1);
+             child->node->style->width = cell_w; // Force style width
+             layout_compute_internal_void(child, child_x_start, cursor_y, cell_w); 
+             child->dimensions.width = cell_w; // Force dim width
+             child_x_start += cell_w; // Move cursor right directly
+             
+             if (child->dimensions.height > line.max_height) line.max_height = child->dimensions.height;
         } 
         else if (is_block(child->node)) {
-            // Block Child: Clears line
-            if (line_height > 0) {
-                cursor_y += line_height;
-                line_height = 0;
+            // Flush any inline content first
+            if (line.count > 0) {
+                flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
+                cursor_y += line.max_height;
+                line.max_height = 0; // Reset after flush
             }
-            cursor_x = child_x; // Reset X
-            
-            // Recurse
-            rect_t child_res = layout_compute_internal(child, cursor_x, cursor_y, box->dimensions.width); // Blocks get parent's content width
-            
-            cursor_y += child_res.height + child->node->style->margin_top + child->node->style->margin_bottom;
+
+            // Layout Block
+            rect_t res = layout_compute_internal(child, child_x_start, cursor_y, max_child_w);
+            cursor_y += res.height + child->node->style->margin_top + child->node->style->margin_bottom;
         } 
         else {
-            // Inline Child
-            // We need to tentatively check if it fits. 
-            // For simple recursion, we assume it fits, calc size, then check wrap.
+            // Inline
+            // 1. Calculate size tentatively (pass full width to let it size itself)
+            // Note: Inline containers need to know available space to wrap their own children?
+            // For now, simplify: Measure intrinsic size
             
-            // Pass remaining width on line? No, pass full width but we check position.
-            // If we pass full content_width, an inline-block might take it all.
-            // Inline elements generally "shrink wrap".
+            rect_t res = layout_compute_internal(child, 0, 0, max_child_w); 
+            // Pos is 0,0 because we don't know it yet. We just want dims.
             
-            int remaining_on_line = (child_x + box->dimensions.width) - cursor_x; 
-            
-            // Recurse
-            rect_t child_res = layout_compute_internal(child, cursor_x, cursor_y, box->dimensions.width); // Give full context width
-            
-            // Check wrap
-            int child_outer_w = child->dimensions.width + child->node->style->margin_left + child->node->style->margin_right;
-            int child_outer_h = child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom;
+            int child_w = res.width + child->node->style->margin_left + child->node->style->margin_right;
+            int child_h = res.height + child->node->style->margin_top + child->node->style->margin_bottom;
 
-            if (cursor_x + child_outer_w > child_x + box->dimensions.width && cursor_x > child_x) {
+            // Check fit
+            if (line.current_width + child_w > max_child_w && line.count > 0) {
                 // Wrap
-                cursor_x = child_x;
-                cursor_y += line_height;
-                line_height = 0;
-                
-                // Re-layout at new position
-                child_res = layout_compute_internal(child, cursor_x, cursor_y, box->dimensions.width);
-                child_outer_w = child->dimensions.width + child->node->style->margin_left + child->node->style->margin_right;
-                child_outer_h = child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom;
+                flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
+                cursor_y += line.max_height; // previous line height
+                // New line starts with 0 height
             }
 
-            cursor_x += child_outer_w;
-            if (child_outer_h > line_height) line_height = child_outer_h;
-            
-            // Propagate size up if we are an inline container
-            if (!is_block(box->node) && cursor_x - child_x > box->dimensions.width) {
-                box->dimensions.width = cursor_x - child_x;
+            // Add to line
+            if (line.count < MAX_LINE_ITEMS) {
+                line.items[line.count++] = child;
+                line.current_width += child_w;
+                if (child_h > line.max_height) line.max_height = child_h;
+            } else {
+                // Buffer full, force flush (rare edge case)
+                flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
+                cursor_y += line.max_height;
+                
+                // Add current
+                line.items[line.count++] = child;
+                line.current_width += child_w;
+                line.max_height = child_h;
             }
+            
+            // If inline container grew (e.g. bold text), propagate? 
+            // We used recursive layout call so 'child' dimensions are set. 
+            // flush_line will just move them.
         }
         child = child->next_sibling;
     }
 
-    // Finish last line
-    if (line_height > 0) cursor_y += line_height;
+    // Flush remaining
+    if (line.count > 0) {
+        flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
+        cursor_y += line.max_height;
+    }
 
-    // 4. Calculate Height
-    int content_height = cursor_y - child_y;
-    if (style->height > 0) {
-        box->dimensions.height = style->height;
-    } else {
+    // Calc height
+    int content_height = cursor_y - (box->dimensions.y + bw + pt);
+    if (style->height > 0) box->dimensions.height = style->height;
+    else {
         box->dimensions.height = content_height;
-        // Min height for text/images if empty
-        if (box->dimensions.height == 0) {
-             if (box->node->type == DOM_NODE_TEXT) box->dimensions.height = 20;
-             if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) box->dimensions.height = 100;
-        }
+         if (box->dimensions.height == 0 && box->node->type == DOM_NODE_TEXT) box->dimensions.height = 20;
     }
     
-    // For tables rows
-    if (style->display == DISPLAY_TABLE_ROW) box->dimensions.height = line_height;
+    // Adjust height for Table Row
+    if (style->display == DISPLAY_TABLE_ROW) box->dimensions.height = line.max_height > 0 ? line.max_height : 20;
 
     used_dim.width = box->dimensions.width + ml + mr + pl + pr + (bw*2);
     used_dim.height = box->dimensions.height + mt + mb + pt + pb + (bw*2);
-    
     return used_dim;
 }
 
