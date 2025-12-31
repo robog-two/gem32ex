@@ -1,10 +1,29 @@
 #include "style.h"
 #include "dom.h"
 #include "log.h"
-#include "css_name_colors.h"
+#include "css_property.h"
+#include "css_stylesheet.h"
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
+
+/*
+ * Style Computation Module
+ *
+ * This module coordinates the CSS cascade and style computation for DOM nodes.
+ * It uses the modular CSS system:
+ * - css_property.c: Property parsing
+ * - css_selector.c: Selector matching
+ * - css_stylesheet.c: Stylesheet management
+ *
+ * Style computation follows the CSS cascade:
+ * 1. Initialize with defaults
+ * 2. Inherit from parent
+ * 3. Apply user-agent stylesheet
+ * 4. Apply author stylesheets (external/internal)
+ * 5. Apply inline styles
+ * 6. Compute final values
+ */
 
 void style_init_default(style_t *style) {
     if (!style) return;
@@ -23,134 +42,55 @@ void style_init_default(style_t *style) {
     style->text_decoration = TEXT_DECORATION_NONE;
 }
 
-static char* parse_url_value(const char *val) {
-    if (!val) return NULL;
-    if (strncasecmp(val, "url(", 4) == 0) {
-        const char *start = val + 4;
-        while (*start == ' ' || *start == '"' || *start == '\'') start++;
-        const char *end = val + strlen(val) - 1;
-        while (end > start && (*end == ' ' || *end == ')' || *end == '"' || *end == '\'')) end--;
-        int len = (int)(end - start + 1);
-        if (len <= 0) return NULL;
-        char *ret = malloc(len + 1);
-        memcpy(ret, start, len);
-        ret[len] = '\0';
-        return ret;
-    }
-    return strdup(val);
-}
+// All CSS property parsing is now in css_property.c
+// This file now focuses on coordinating the cascade
 
-static void parse_css_property(style_t *style, char *name, char *val) {
-    // Simple trim
-    while (*name == ' ' || *name == '\t' || *name == '\n') name++;
-    char *end = name + strlen(name) - 1;
-    while (end > name && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
-
-    while (*val == ' ' || *val == '\t' || *val == '\n') val++;
-    end = val + strlen(val) - 1;
-    while (end > val && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
-
-    if (name[0] == '-') return; // Ignore variables and vendor prefixes
-
-    if (strcasecmp(name, "position") == 0) {
-        if (strcasecmp(val, "absolute") == 0) style->position = POSITION_ABSOLUTE;
-        else if (strcasecmp(val, "relative") == 0) style->position = POSITION_RELATIVE;
-        else if (strcasecmp(val, "fixed") == 0) style->position = POSITION_FIXED;
-        else style->position = POSITION_STATIC;
-    } else if (strcasecmp(name, "background-image") == 0) {
-        if (style->bg_image) free(style->bg_image);
-        style->bg_image = parse_url_value(val);
-    } else if (strcasecmp(name, "top") == 0) style->top = atoi(val);
-    else if (strcasecmp(name, "left") == 0) style->left = atoi(val);
-    else if (strcasecmp(name, "right") == 0) style->right = atoi(val);
-    else if (strcasecmp(name, "bottom") == 0) style->bottom = atoi(val);
-    else if (strcasecmp(name, "width") == 0) style->width = atoi(val);
-    else if (strcasecmp(name, "height") == 0) style->height = atoi(val);
-    else if (strcasecmp(name, "display") == 0) {
-        if (strcasecmp(val, "block") == 0) style->display = DISPLAY_BLOCK;
-        else if (strcasecmp(val, "inline") == 0) style->display = DISPLAY_INLINE;
-        else if (strcasecmp(val, "inline-block") == 0) style->display = DISPLAY_INLINE_BLOCK;
-        else if (strcasecmp(val, "list-item") == 0) style->display = DISPLAY_LIST_ITEM;
-        else if (strcasecmp(val, "none") == 0) style->display = DISPLAY_NONE;
-        else if (strcasecmp(val, "table") == 0) style->display = DISPLAY_TABLE;
-        else if (strcasecmp(val, "table-row") == 0) style->display = DISPLAY_TABLE_ROW;
-        else if (strcasecmp(val, "table-cell") == 0) style->display = DISPLAY_TABLE_CELL;
-    }
-    else if (strcasecmp(name, "float") == 0) {
-        if (strcasecmp(val, "left") == 0) style->float_prop = FLOAT_LEFT;
-        else if (strcasecmp(val, "right") == 0) style->float_prop = FLOAT_RIGHT;
-        else if (strcasecmp(val, "none") == 0) style->float_prop = FLOAT_NONE;
-    }
-    else if (strcasecmp(name, "clear") == 0) {
-        if (strcasecmp(val, "left") == 0) style->clear = CLEAR_LEFT;
-        else if (strcasecmp(val, "right") == 0) style->clear = CLEAR_RIGHT;
-        else if (strcasecmp(val, "both") == 0) style->clear = CLEAR_BOTH;
-        else if (strcasecmp(val, "none") == 0) style->clear = CLEAR_NONE;
-    }
-    else if (strcasecmp(name, "overflow") == 0) {
-        if (strcasecmp(val, "visible") == 0) style->overflow = OVERFLOW_VISIBLE;
-        else if (strcasecmp(val, "hidden") == 0) style->overflow = OVERFLOW_HIDDEN;
-        else if (strcasecmp(val, "scroll") == 0) style->overflow = OVERFLOW_SCROLL;
-        else if (strcasecmp(val, "auto") == 0) style->overflow = OVERFLOW_AUTO;
-    }
-    else if (strcasecmp(name, "position") == 0) {
-        if (strcasecmp(val, "static") == 0) style->position = POSITION_STATIC;
-        else if (strcasecmp(val, "relative") == 0) style->position = POSITION_RELATIVE;
-        else if (strcasecmp(val, "absolute") == 0) style->position = POSITION_ABSOLUTE;
-        else if (strcasecmp(val, "fixed") == 0) style->position = POSITION_FIXED;
-    }
-}
-
-static void parse_inline_style(style_t *style, const char *css) {
-    if (!css) return;
-    char *copy = strdup(css);
-    if (!copy) return;
-
-    char *p = copy;
-    while (*p) {
-        char *end = strchr(p, ';');
-        if (end) *end = '\0';
-
-        char *colon = strchr(p, ':');
-        if (colon) {
-            *colon = '\0';
-            parse_css_property(style, p, colon + 1);
-        }
-
-        if (!end) break;
-        p = end + 1;
-    }
-    free(copy);
-}
-
+/*
+ * Main style computation function
+ * Implements the CSS cascade for a DOM node
+ */
 void style_compute(node_t *node) {
     if (!node || !node->style) return;
 
     if (node->tag_name && strcmp(node->tag_name, "root") == 0) {
-        LOG_INFO("Computing styles...");
-    }
-
-    // Inherit from parent
-    if (node->parent && node->parent->style) {
-        node->style->font_size = node->parent->style->font_size;
-        node->style->font_weight = node->parent->style->font_weight;
-        node->style->font_style = node->parent->style->font_style;
-        node->style->font_family = node->parent->style->font_family;
-        node->style->color = node->parent->style->color;
-        node->style->text_align = node->parent->style->text_align;
-        // Text decoration is usually not inherited in the CSS sense (it paints over children),
-        // but for a simple engine, inheriting 'state' might be easier, or we render it on the parent.
-        // Let's inherit it for simplicity in rendering leaf nodes.
-        node->style->text_decoration = node->parent->style->text_decoration;
+        LOG_INFO("Computing styles using modular CSS system...");
     }
 
     style_t *style = node->style;
 
+    // Step 1: Inherit inheritable properties from parent
+    if (node->parent && node->parent->style) {
+        style->font_size = node->parent->style->font_size;
+        style->font_weight = node->parent->style->font_weight;
+        style->font_style = node->parent->style->font_style;
+        style->font_family = node->parent->style->font_family;
+        style->color = node->parent->style->color;
+        style->text_align = node->parent->style->text_align;
+        style->text_decoration = node->parent->style->text_decoration;
+    }
+
+    // Step 2: Apply user-agent stylesheet (browser defaults)
+    css_stylesheet_t *ua_sheet = css_get_user_agent_stylesheet();
+    if (ua_sheet) {
+        css_stylesheet_apply_to_style(ua_sheet, node, style);
+    }
+
+    // Step 3: Apply author stylesheets would go here (external CSS)
+    // TODO: Add support for <link> and <style> tags
+
+    // Step 4: Apply inline styles (highest priority except !important)
+    const char *inline_style = node_get_attr(node, "style");
+    if (inline_style) {
+        css_properties_parse_block(style, inline_style);
+    }
+
+    // Step 5: Browser-specific form element default dimensions/appearance
+    // (These aren't part of CSS spec, they're browser UI defaults)
     if (node->type == DOM_NODE_ELEMENT && node->tag_name) {
-        // Block Elements
         if (strcasecmp(node->tag_name, "html") == 0 ||
             strcasecmp(node->tag_name, "root") == 0) {
-            style->display = DISPLAY_BLOCK;
+            // Ensure root is always block (even if user-agent sheet fails)
+            if (style->display != DISPLAY_BLOCK) style->display = DISPLAY_BLOCK;
         } else if (strcasecmp(node->tag_name, "body") == 0) {
             style->display = DISPLAY_BLOCK;
             style->margin_top = style->margin_bottom = 8;
