@@ -8,8 +8,9 @@ OBJ = $(SRC:.c=.o)
 TARGET = gem32.exe
 TEST_TARGET = gem32-tests.exe
 CORE_TEST_TARGET = gem32-core-tests.exe
+ALL_TESTS_TARGET = gem32-all-tests.exe
 
-all: $(TARGET) $(TEST_TARGET) $(CORE_TEST_TARGET)
+all: $(TARGET) $(TEST_TARGET) $(CORE_TEST_TARGET) $(ALL_TESTS_TARGET)
 
 $(TARGET): $(OBJ)
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -18,6 +19,11 @@ $(TEST_TARGET): tests/test_network.c src/network/tls.c src/network/http.c src/ne
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -mconsole
 
 $(CORE_TEST_TARGET): tests/test_core.c $(CORE_SRC)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -mconsole
+
+$(ALL_TESTS_TARGET): tests/all_tests.c tests/test_network.c tests/test_core.c \
+                   src/network/tls.c src/network/http.c src/network/gemini.c \
+                   src/network/protocol.c $(CORE_SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -mconsole
 
 %.o: %.c
