@@ -339,6 +339,7 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
 
     if (box->node->type == DOM_NODE_ELEMENT) {
         if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
+            LOG_DEBUG("Render: Image box has border_box w=%d h=%d, passing to render_image_data", w, h);
             render_image_data(hdc, box->node->image_data, box->node->image_size, x, y, w, h);
         } else {
             // Background color if set
