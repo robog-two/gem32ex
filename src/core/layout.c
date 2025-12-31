@@ -145,9 +145,9 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
         else if (is_block(child->node)) {
             // Flush any inline content first
             if (line.count > 0) {
+                int lh = line.max_height;
                 flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-                cursor_y += line.max_height;
-                line.max_height = 0; // Reset after flush
+                cursor_y += lh;
             }
 
             // Layout Block
@@ -169,8 +169,9 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
             // Check fit
             if (line.current_width + child_w > max_child_w && line.count > 0) {
                 // Wrap
+                int lh = line.max_height;
                 flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-                cursor_y += line.max_height; // previous line height
+                cursor_y += lh; 
                 // New line starts with 0 height
             }
 
@@ -181,8 +182,9 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
                 if (child_h > line.max_height) line.max_height = child_h;
             } else {
                 // Buffer full, force flush (rare edge case)
+                int lh = line.max_height;
                 flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-                cursor_y += line.max_height;
+                cursor_y += lh;
                 
                 // Add current
                 line.items[line.count++] = child;
@@ -199,8 +201,9 @@ rect_t layout_compute_internal(layout_box_t *box, int x, int y, int available_wi
 
     // Flush remaining
     if (line.count > 0) {
+        int lh = line.max_height;
         flush_line(&line, child_x_start, cursor_y, max_child_w, style->text_align);
-        cursor_y += line.max_height;
+        cursor_y += lh;
     }
 
     // Calc height

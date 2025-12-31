@@ -89,7 +89,7 @@ void style_compute(node_t *node) {
     // Check for align attribute or specific tags
     attr_t *attr = node->attributes;
     while (attr) {
-        if (strcasecmp(attr->name, "align") == 0) {
+        if (strcasecmp(attr->name, "align") == 0 && attr->value) {
             if (strcasecmp(attr->value, "center") == 0) node->style->text_align = TEXT_ALIGN_CENTER;
             else if (strcasecmp(attr->value, "right") == 0) node->style->text_align = TEXT_ALIGN_RIGHT;
             else node->style->text_align = TEXT_ALIGN_LEFT;
@@ -97,7 +97,7 @@ void style_compute(node_t *node) {
         attr = attr->next;
     }
 
-    if (strcasecmp(node->tag_name, "center") == 0) {
+    if (node->tag_name && strcasecmp(node->tag_name, "center") == 0) {
         node->style->display = DISPLAY_BLOCK;
         node->style->text_align = TEXT_ALIGN_CENTER;
     }
