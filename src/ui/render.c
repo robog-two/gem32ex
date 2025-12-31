@@ -224,6 +224,12 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
         return;
     }
 
+    // Check for zero dimensions - would result in invisible image
+    if (w <= 0 || h <= 0) {
+        LOG_WARN("Image has zero dimensions: %dx%d (image will be invisible)", w, h);
+        return;
+    }
+
     int is_png_file = is_png(data, size);
 
     HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
@@ -252,12 +258,18 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
             GpStatus status = fn_GdipCreateBitmapFromStream(pStream, &bitmap);
             if (status == 0 && bitmap) {
                 GpGraphics *graphics = NULL;
-                if (fn_GdipCreateFromHDC(hdc, &graphics) == 0 && graphics) {
-                    if (fn_GdipDrawImageRectI(graphics, (GpImage*)bitmap, x, y, w, h) == 0) {
+                GpStatus graphics_status = fn_GdipCreateFromHDC(hdc, &graphics);
+                if (graphics_status == 0 && graphics) {
+                    GpStatus draw_status = fn_GdipDrawImageRectI(graphics, (GpImage*)bitmap, x, y, w, h);
+                    if (draw_status == 0) {
                         drawn = 1;
-                        LOG_DEBUG("Image rendered with GDI+ (%lu bytes)", (unsigned long)size);
+                        LOG_DEBUG("Image rendered with GDI+ (%lu bytes) at (%d,%d) size %dx%d", (unsigned long)size, x, y, w, h);
+                    } else {
+                        LOG_WARN("GdipDrawImageRectI failed with status %d at (%d,%d) size %dx%d", (int)draw_status, x, y, w, h);
                     }
                     fn_GdipDeleteGraphics(graphics);
+                } else {
+                    LOG_WARN("GdipCreateFromHDC failed with status %d", (int)graphics_status);
                 }
                 fn_GdipDisposeImage((GpImage*)bitmap);
             } else if (status != 0) {
