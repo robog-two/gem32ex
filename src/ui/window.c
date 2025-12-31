@@ -41,6 +41,7 @@ static node_t *g_current_dom = NULL;
 node_t *g_focused_node = NULL;
 static char g_current_url[2048] = {0};
 static HMODULE g_hShell32 = NULL;
+static int g_skip_history = 0;
 
 // Scrollbar State
 static int g_scroll_x = 0;
@@ -228,8 +229,41 @@ static void DrawHistoryTree(HDC hdc, history_node_t *node, int *x, int y) {
     }
 }
 
+static history_node_t* HitTestHistory(history_node_t *node, int *x, int y, int hitX, int hitY) {
+    if (!node) return NULL;
+    int iconSize = 16;
+    int spacing = 24;
+    int curX = *x;
+
+    if (hitX >= curX && hitX <= curX + iconSize && hitY >= y && hitY <= y + iconSize) {
+        return node;
+    }
+
+    *x += spacing;
+
+    for (int i = 0; i < node->children_count; i++) {
+        history_node_t *res = HitTestHistory(node->children[i], x, y, hitX, hitY);
+        if (res) return res;
+    }
+    return NULL;
+}
+
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+        case WM_LBUTTONDOWN: {
+            if (!g_history || !g_history->root) return 0;
+            int hitX = LOWORD(lParam);
+            int hitY = HIWORD(lParam);
+            int x = 10;
+            history_node_t *node = HitTestHistory(g_history->root, &x, 10, hitX, hitY);
+            if (node) {
+                g_history->current = node;
+                g_skip_history = 1;
+                Navigate(GetParent(hwnd), node->url);
+                g_skip_history = 0;
+            }
+            return 0;
+        }
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
@@ -308,8 +342,10 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
         g_scroll_y = 0;
         UpdateScrollBars(hContent);
 
-        history_add(g_history, url, "Title Placeholder");
-        FetchFavicon(g_history->current);
+        if (!g_skip_history) {
+            history_add(g_history, url, "Title Placeholder");
+            FetchFavicon(g_history->current);
+        }
         InvalidateRect(GetDlgItem(hMain, ID_HISTORY), NULL, TRUE);
     }
 
