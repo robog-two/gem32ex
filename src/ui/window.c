@@ -78,6 +78,11 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     }
 
     LOG_INFO("Main window created successfully");
+
+    ShowWindow(hwnd, nCmdShow);
+    UpdateWindow(hwnd);
+
+    return TRUE;
 }
 
 #include "network/loader.h"

@@ -3,17 +3,12 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-static HANDLE hConsole = NULL;
-
 void log_init(void) {
-    if (AllocConsole()) {
-        hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        // Redirect standard streams to the new console
+    // Attempt to attach to parent console (if any)
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        // Redirect standard streams to the attached console
         freopen("CONOUT$", "w", stdout);
         freopen("CONOUT$", "w", stderr);
-        
-        // Also set console title
-        SetConsoleTitle("Gem32 Debug Console");
     }
 }
 
@@ -34,11 +29,9 @@ void log_msg(log_level_t level, const char* format, ...) {
     va_end(args);
 
     if (len > 0) {
-        // Output to console if available
-        if (hConsole) {
-            printf("[%s] %s\n", level_str, buffer);
-            fflush(stdout);
-        }
+        // Output to stdout (might be redirected or attached console)
+        printf("[%s] %s\n", level_str, buffer);
+        fflush(stdout);
         
         // Always output to debug stream
         char debug_buffer[1100];
