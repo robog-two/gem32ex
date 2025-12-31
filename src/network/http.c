@@ -47,46 +47,46 @@ static int is_chunked(const char *headers) {
 
 static void unchunk_response(network_response_t *res) {
     if (!res || !res->data || res->size == 0) return;
-    
+
     char *new_data = malloc(res->size + 1); // Max size roughly same
     if (!new_data) return;
-    
+
     size_t write_pos = 0;
     char *p = res->data;
     char *end = res->data + res->size;
-    
+
     while (p < end) {
         char *term = strstr(p, "\r\n");
         if (!term) break;
-        
+
         *term = '\0';
         long chunk_len = strtol(p, NULL, 16);
         *term = '\r'; // Restore (optional)
         p = term + 2; // Skip \r\n
-        
+
         if (chunk_len == 0) break; // End chunk
-        
+
         if (p + chunk_len > end) break; // Malformed
-        
+
         // Resize if needed (unlikely unless initial alloc was conservative)
         // memcpy
         if (write_pos + chunk_len > res->size) {
              // Should not happen for valid chunks as chunked overhead makes src larger
         }
-        
+
         memcpy(new_data + write_pos, p, chunk_len);
         write_pos += chunk_len;
         p += chunk_len;
-        
+
         // Skip trailing \r\n
         if (p + 2 <= end && p[0] == '\r' && p[1] == '\n') p += 2;
     }
-    
+
     new_data[write_pos] = '\0';
     free(res->data);
     res->data = new_data;
     res->size = write_pos;
-    LOG_INFO("Unchunked response to %zu bytes", res->size);
+    LOG_INFO("Unchunked response to %lu bytes", (unsigned long) res->size);
 }
 
 static network_response_t* https_fetch_raw(const char *host, int port, const char *path, const char *method, const char *body, const char *content_type) {
@@ -98,7 +98,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
     }
 
     char request[4096];
-    int req_len = snprintf(request, sizeof(request), 
+    int req_len = snprintf(request, sizeof(request),
         "%s %s HTTP/1.1\r\n"
         "Host: %s\r\n"
         "User-Agent: Gem32Browser/1.0\r\n"
@@ -152,7 +152,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
         if (header_end) {
             *header_end = '\0';
             char *body_start = header_end + 4;
-            
+
             char *first_line_end = strstr(data, "\r\n");
             if (first_line_end) {
                 *first_line_end = '\0';
@@ -200,7 +200,7 @@ static network_response_t* https_fetch_raw(const char *host, int port, const cha
                 memcpy(res->data, body_start, body_len);
                 res->data[body_len] = '\0';
                 res->size = body_len;
-                
+
                 // Handle Chunked
                 if (is_chunked(data)) {
                     unchunk_response(res);

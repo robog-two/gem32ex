@@ -54,7 +54,7 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
             size_t cached_size = 0;
             void *cached_data = cache_get_image(full_url, &cached_size);
             if (cached_data) {
-                LOG_DEBUG("Loaded background from cache: %s (%zu bytes)", full_url, cached_size);
+                LOG_DEBUG("Loaded background from cache: %s (%lu bytes)", full_url, (unsigned long) cached_size);
                 node->bg_image_data = cached_data;
                 node->bg_image_size = cached_size;
             } else {
@@ -92,7 +92,7 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                 size_t cached_size = 0;
                 void *cached_data = cache_get_image(full_url, &cached_size);
                 if (cached_data) {
-                    LOG_DEBUG("Loaded image from cache: %s (%zu bytes)", full_url, cached_size);
+                    LOG_DEBUG("Loaded image from cache: %s (%lu bytes)", full_url, (unsigned long) cached_size);
                     node->image_data = cached_data;
                     node->image_size = cached_size;
                     // Extract dimensions from cached image
@@ -133,13 +133,13 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                 if (res && res->data) {
                     node->iframe_doc = html_parse(res->data);
                     // Recursively fetch resources for the iframe
-                    loader_fetch_resources(node->iframe_doc, full_url, cb, ctx, current_count, total_count); // Pass pointers down? No, total_count is for *this* doc? 
+                    loader_fetch_resources(node->iframe_doc, full_url, cb, ctx, current_count, total_count); // Pass pointers down? No, total_count is for *this* doc?
                     // Actually, if we want global progress, we should count iframe resources too.
                     // But loader_count_resources isn't recursive into iframes because they aren't loaded yet!
                     // So progress bar will jump.
                     // That's acceptable. Or we can just count the iframe fetch itself as 1 step.
                     // I'll count the iframe fetch as 1 step.
-                    // The recursive fetch inside iframe won't update the MAIN progress bar total, 
+                    // The recursive fetch inside iframe won't update the MAIN progress bar total,
                     // but it will increment current... potentially exceeding total if not careful.
                     // Simplest: Don't pass cb to recursive iframe load? Or pass it but don't increment main count?
                     // I'll pass it. The user will see progress go beyond 100% or just keep moving.

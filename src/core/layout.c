@@ -173,13 +173,13 @@ static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, in
  */
 static void layout_inline_children(layout_box_t *box, constraint_space_t space, int *y_cursor) {
     line_info_t line = {0};
-    
+
     int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
 
     if (box->node->style->display == DISPLAY_INLINE && box->node->style->width <= 0) {
-        int decoration = box->node->style->padding_left + box->node->style->padding_right + 
-                         (box->node->style->border_width * 2) + 
+        int decoration = box->node->style->padding_left + box->node->style->padding_right +
+                         (box->node->style->border_width * 2) +
                          box->node->style->margin_left + box->node->style->margin_right;
         available_width = space.available_width - decoration;
         if (available_width < 0) available_width = 0;
@@ -250,7 +250,7 @@ static void get_cumulative_offset(layout_box_t *box, int *dx, int *dy) {
     *dx = 0;
     *dy = 0;
     if (!box || !box->parent) return;
-    
+
     // Start from parent, as box->x is relative to parent
     layout_box_t *p = box->parent;
     while (p) {
@@ -317,7 +317,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         int is_first_child = 1;
         while (child) {
             if (child->node->style->display == DISPLAY_NONE) { child = child->next_sibling; continue; }
-            
+
             if (child->node->style->position == POSITION_ABSOLUTE || child->node->style->position == POSITION_FIXED) {
                 constraint_space_t child_space = {box->fragment.content_box.width, 0, 1, 0};
                 layout_compute(child, child_space);
@@ -333,7 +333,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
             if (is_block(child->node)) {
                 int cur_mt = child->node->style->margin_top;
 
-                /* 
+                /*
                  * Margin Collapse Logic:
                  * Adjacent vertical margins of block-level boxes collapse.
                  * The resulting margin width is the maximum of the adjoining margin widths.
@@ -364,7 +364,7 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
             child->fragment.border_box.y = child_y;
 
             layout_compute(child, child_space);
-            
+
             if (child->node->style->position == POSITION_RELATIVE) {
                 child->fragment.border_box.x += child->node->style->left;
                 child->fragment.border_box.y += child->node->style->top;

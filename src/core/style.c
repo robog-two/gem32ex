@@ -1,6 +1,7 @@
 #include "style.h"
 #include "dom.h"
 #include "log.h"
+#include "css_name_colors.h"
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
@@ -16,24 +17,6 @@ void style_init_default(style_t *style) {
     style->font_style = FONT_STYLE_NORMAL;
     style->font_family = FONT_FAMILY_SERIF; // Default serif usually
     style->text_decoration = TEXT_DECORATION_NONE;
-}
-
-static uint32_t parse_color(const char *val) {
-    if (!val) return 0;
-    if (val[0] == '#') {
-        return (uint32_t)strtol(val + 1, NULL, 16);
-    }
-    // Basic named colors
-    if (strcasecmp(val, "red") == 0) return 0xFF0000;
-    if (strcasecmp(val, "green") == 0) return 0x00FF00;
-    if (strcasecmp(val, "blue") == 0) return 0x0000FF;
-    if (strcasecmp(val, "white") == 0) return 0xFFFFFF;
-    if (strcasecmp(val, "black") == 0) return 0x000000;
-    if (strcasecmp(val, "gray") == 0) return 0x808080;
-    if (strcasecmp(val, "navy") == 0) return 0x000080;
-    if (strcasecmp(val, "maroon") == 0) return 0x800000;
-    if (strcasecmp(val, "purple") == 0) return 0x800080;
-    return 0;
 }
 
 static char* parse_url_value(const char *val) {
@@ -58,7 +41,7 @@ static void parse_css_property(style_t *style, char *name, char *val) {
     while (*name == ' ' || *name == '\t' || *name == '\n') name++;
     char *end = name + strlen(name) - 1;
     while (end > name && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
-    
+
     while (*val == ' ' || *val == '\t' || *val == '\n') val++;
     end = val + strlen(val) - 1;
     while (end > val && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
@@ -90,18 +73,18 @@ static void parse_inline_style(style_t *style, const char *css) {
     if (!css) return;
     char *copy = strdup(css);
     if (!copy) return;
-    
+
     char *p = copy;
     while (*p) {
         char *end = strchr(p, ';');
         if (end) *end = '\0';
-        
+
         char *colon = strchr(p, ':');
         if (colon) {
             *colon = '\0';
             parse_css_property(style, p, colon + 1);
         }
-        
+
         if (!end) break;
         p = end + 1;
     }
@@ -123,7 +106,7 @@ void style_compute(node_t *node) {
         node->style->font_family = node->parent->style->font_family;
         node->style->color = node->parent->style->color;
         node->style->text_align = node->parent->style->text_align;
-        // Text decoration is usually not inherited in the CSS sense (it paints over children), 
+        // Text decoration is usually not inherited in the CSS sense (it paints over children),
         // but for a simple engine, inheriting 'state' might be easier, or we render it on the parent.
         // Let's inherit it for simplicity in rendering leaf nodes.
         node->style->text_decoration = node->parent->style->text_decoration;
@@ -133,7 +116,7 @@ void style_compute(node_t *node) {
 
     if (node->type == DOM_NODE_ELEMENT && node->tag_name) {
         // Block Elements
-        if (strcasecmp(node->tag_name, "html") == 0 || 
+        if (strcasecmp(node->tag_name, "html") == 0 ||
             strcasecmp(node->tag_name, "root") == 0) {
             style->display = DISPLAY_BLOCK;
         } else if (strcasecmp(node->tag_name, "body") == 0) {
@@ -158,8 +141,8 @@ void style_compute(node_t *node) {
                    strcasecmp(node->tag_name, "pre") == 0 ||
                    strcasecmp(node->tag_name, "section") == 0) {
             style->display = DISPLAY_BLOCK;
-        } 
-        
+        }
+
         // Specific Block Styles
         if (strcasecmp(node->tag_name, "p") == 0) {
             style->margin_top = style->margin_bottom = 16;
@@ -212,9 +195,9 @@ void style_compute(node_t *node) {
         }
 
         // Lists
-        else if (strcasecmp(node->tag_name, "ul") == 0 || 
-                   strcasecmp(node->tag_name, "ol") == 0 || 
-                   strcasecmp(node->tag_name, "menu") == 0 || 
+        else if (strcasecmp(node->tag_name, "ul") == 0 ||
+                   strcasecmp(node->tag_name, "ol") == 0 ||
+                   strcasecmp(node->tag_name, "menu") == 0 ||
                    strcasecmp(node->tag_name, "dir") == 0) {
             style->display = DISPLAY_BLOCK;
             style->margin_top = style->margin_bottom = 16;
@@ -235,7 +218,7 @@ void style_compute(node_t *node) {
         // Tables
         else if (strcasecmp(node->tag_name, "table") == 0) {
             style->display = DISPLAY_TABLE;
-            // style->border_collapse ... 
+            // style->border_collapse ...
         } else if (strcasecmp(node->tag_name, "tr") == 0) {
             style->display = DISPLAY_TABLE_ROW;
         } else if (strcasecmp(node->tag_name, "td") == 0) {
@@ -260,7 +243,7 @@ void style_compute(node_t *node) {
             style->border_width = 1;
             style->padding_top = style->padding_bottom = 2;
             style->padding_left = style->padding_right = 4;
-            
+
             if (strcasecmp(node->tag_name, "input") == 0) {
                  const char *type = node_get_attr(node, "type");
                  if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) {
@@ -274,7 +257,7 @@ void style_compute(node_t *node) {
                      style->height = 20;
                  }
             } else if (strcasecmp(node->tag_name, "button") == 0) {
-                 style->bg_color = 0xE1E1E1; 
+                 style->bg_color = 0xE1E1E1;
                  style->text_align = TEXT_ALIGN_CENTER;
                  style->width = 80;
                  style->height = 24;
@@ -334,7 +317,7 @@ void style_compute(node_t *node) {
         } else if (strcasecmp(node->tag_name, "big") == 0) {
             style->display = DISPLAY_INLINE;
             style->font_size = (style->font_size * 12) / 10; // 1.2em approx
-        } else if (strcasecmp(node->tag_name, "sub") == 0 || 
+        } else if (strcasecmp(node->tag_name, "sub") == 0 ||
                    strcasecmp(node->tag_name, "sup") == 0) {
             style->display = DISPLAY_INLINE;
             style->font_size = (style->font_size * 8) / 10;
