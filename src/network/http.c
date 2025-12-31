@@ -9,6 +9,7 @@ void network_response_free(network_response_t *res) {
     if (res) {
         if (res->data) free(res->data);
         if (res->content_type) free(res->content_type);
+        if (res->final_url) free(res->final_url);
         free(res);
     }
 }

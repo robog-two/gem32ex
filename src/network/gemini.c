@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Missing in older XP headers
 #ifndef SP_PROT_TLS1_1_CLIENT
 #define SP_PROT_TLS1_1_CLIENT 0x00000200
 #endif
@@ -22,8 +21,7 @@
 #define ISC_RET_STREAM 0x00008000
 #endif
 
-#pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "secur32.lib")
+static PSecurityFunctionTableA g_pSSPI = NULL;
 
 static int send_all(SOCKET s, const char *buf, int len) {
     int total = 0;
@@ -33,11 +31,6 @@ static int send_all(SOCKET s, const char *buf, int len) {
         total += n;
     }
     return total;
-}
-
-static int recv_all(SOCKET s, char *buf, int len) {
-    int n = recv(s, buf, len, 0);
-    return n;
 }
 
 static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const char* szHostName, PCtxtHandle phContext, SecBuffer* pExtraData) {
@@ -53,12 +46,12 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
     outBuffer[0].BufferType = SECBUFFER_TOKEN;
     outBuffer[0].cbBuffer = 0;
 
-    scRet = InitializeSecurityContextA(phCreds, NULL, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, NULL, 0, phContext, &outBufferDesc, &dwSSPIFlags, NULL);
+    scRet = g_pSSPI->InitializeSecurityContextA(phCreds, NULL, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, NULL, 0, phContext, &outBufferDesc, &dwSSPIFlags, NULL);
     if (scRet != SEC_I_CONTINUE_NEEDED) return scRet;
 
     if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
         send_all(s, outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
-        FreeContextBuffer(outBuffer[0].pvBuffer);
+        g_pSSPI->FreeContextBuffer(outBuffer[0].pvBuffer);
     }
 
     char readBuf[4096];
@@ -83,12 +76,12 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
         outBuffer[0].pvBuffer = NULL;
         outBuffer[0].cbBuffer = 0;
 
-        scRet = InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
+        scRet = g_pSSPI->InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
 
         if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED) {
             if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
                 send_all(s, outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
-                FreeContextBuffer(outBuffer[0].pvBuffer);
+                g_pSSPI->FreeContextBuffer(outBuffer[0].pvBuffer);
             }
             if (scRet == SEC_E_OK) {
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
@@ -111,6 +104,9 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
 
 network_response_t* gemini_fetch(const char *url) {
     if (strncmp(url, "gemini://", 9) != 0) return NULL;
+
+    if (!g_pSSPI) g_pSSPI = InitSecurityInterfaceA();
+    if (!g_pSSPI) return NULL;
 
     char host[256];
     char port_str[16];
@@ -165,24 +161,21 @@ network_response_t* gemini_fetch(const char *url) {
     schannelCred.dwVersion = SCHANNEL_CRED_VERSION;
     schannelCred.grbitEnabledProtocols = SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT;
 
-    if (AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &hCreds, NULL) != SEC_E_OK) { closesocket(s); WSACleanup(); return NULL; }
+    if (g_pSSPI->AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &hCreds, NULL) != SEC_E_OK) { closesocket(s); WSACleanup(); return NULL; }
 
     SecBuffer extraData = {0};
     if (PerformHandshake(s, &hCreds, host, &hContext, &extraData) != SEC_E_OK) {
-        DeleteSecurityContext(&hContext); FreeCredentialsHandle(&hCreds); closesocket(s); WSACleanup(); return NULL;
+        g_pSSPI->DeleteSecurityContext(&hContext); g_pSSPI->FreeCredentialsHandle(&hCreds); closesocket(s); WSACleanup(); return NULL;
     }
 
-    // Wrap request
-    char request[2048];
-    // Spec: absolute URI followed by CRLF. 
-    // Spec: empty path SHOULD add a trailing /
     if (path[0] == '\0') path = "/";
+    char request[2048];
     snprintf(request, sizeof(request), "gemini://%s%s\r\n", host, path);
 
     SecPkgContext_StreamSizes sizes;
-    QueryContextAttributesA(&hContext, SECPKG_ATTR_STREAM_SIZES, &sizes);
+    g_pSSPI->QueryContextAttributesA(&hContext, SECPKG_ATTR_STREAM_SIZES, &sizes);
 
-    DWORD cbMsg = strlen(request);
+    DWORD cbMsg = (DWORD)strlen(request);
     DWORD cbBuffer = sizes.cbHeader + cbMsg + sizes.cbTrailer;
     char* pBuffer = malloc(cbBuffer);
     memcpy(pBuffer + sizes.cbHeader, request, cbMsg);
@@ -204,11 +197,10 @@ network_response_t* gemini_fetch(const char *url) {
     msgBuffers[2].BufferType = SECBUFFER_STREAM_TRAILER;
     msgBuffers[3].BufferType = SECBUFFER_EMPTY;
 
-    EncryptMessage(&hContext, 0, &msgDesc, 0);
+    g_pSSPI->EncryptMessage(&hContext, 0, &msgDesc, 0);
     send_all(s, pBuffer, msgBuffers[0].cbBuffer + msgBuffers[1].cbBuffer + msgBuffers[2].cbBuffer);
     free(pBuffer);
 
-    // Receive response
     network_response_t *res = calloc(1, sizeof(network_response_t));
     char* recvBuf = malloc(16384);
     int recvLen = 0;
@@ -235,12 +227,11 @@ network_response_t* gemini_fetch(const char *url) {
         decryptBuffers[2].BufferType = SECBUFFER_EMPTY;
         decryptBuffers[3].BufferType = SECBUFFER_EMPTY;
 
-        SECURITY_STATUS sc = DecryptMessage(&hContext, &decryptDesc, 0, NULL);
+        SECURITY_STATUS sc = g_pSSPI->DecryptMessage(&hContext, &decryptDesc, 0, NULL);
         if (sc == SEC_E_OK) {
             SecBuffer* pData = NULL;
             for(int i=0; i<4; i++) if (decryptBuffers[i].BufferType == SECBUFFER_DATA) pData = &decryptBuffers[i];
             if (pData) {
-                // Parse Gemini Header
                 char* dataPtr = pData->pvBuffer;
                 int dataLen = pData->cbBuffer;
                 if (!res->data) {
@@ -254,12 +245,10 @@ network_response_t* gemini_fetch(const char *url) {
                         char* crlf = strstr(space + 1, "\r\n");
                         if (crlf) *crlf = '\0';
                         res->content_type = strdup(space + 1);
-                        
-                        // Body follows header
                         char* bodyStart = strstr(dataPtr, "\r\n");
                         if (bodyStart) {
                             bodyStart += 2;
-                            int bodyLen = dataLen - (bodyStart - dataPtr);
+                            int bodyLen = dataLen - (int)(bodyStart - dataPtr);
                             res->data = malloc(bodyLen + 1);
                             memcpy(res->data, bodyStart, bodyLen);
                             res->data[bodyLen] = '\0';
@@ -267,14 +256,12 @@ network_response_t* gemini_fetch(const char *url) {
                         }
                     }
                 } else {
-                    // Append more data
                     res->data = realloc(res->data, res->size + dataLen + 1);
                     memcpy(res->data + res->size, dataPtr, dataLen);
                     res->size += dataLen;
                     res->data[res->size] = '\0';
                 }
             }
-            // If extra data is left, we should loop or handle it. For Gemini, we often get all at once.
             break; 
         } else if (sc == SEC_E_INCOMPLETE_MESSAGE) {
             continue;
@@ -284,8 +271,8 @@ network_response_t* gemini_fetch(const char *url) {
     }
 
     free(recvBuf);
-    DeleteSecurityContext(&hContext);
-    FreeCredentialsHandle(&hCreds);
+    g_pSSPI->DeleteSecurityContext(&hContext);
+    g_pSSPI->FreeCredentialsHandle(&hCreds);
     closesocket(s);
     WSACleanup();
     return res;
