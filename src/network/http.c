@@ -1,7 +1,6 @@
 #include "http.h"
 #include "tls.h"
 #include "core/log.h"
-#include <windows.h>
 #include <wininet.h>
 #include <stdlib.h>
 #include <string.h>
