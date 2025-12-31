@@ -55,112 +55,245 @@ void history_ui_fetch_favicon(history_node_t *node) {
     }
 }
 
-// Count total depth of tree for layout calculation
-static int count_tree_depth(history_node_t *node) {
-    if (!node) return 0;
-    int max_depth = 0;
-    for (int i = 0; i < node->children_count; i++) {
-        int child_depth = count_tree_depth(node->children[i]);
-        if (child_depth > max_depth) max_depth = child_depth;
-    }
-    return max_depth + 1;
-}
+// Calculate the width needed for a node and its siblings
+static int calculate_node_width(history_node_t *node) {
+    if (!node) return 24;
 
-// Draw the history tree (vertical layout on left, items bottom-to-top)
-// y_pos tracks current vertical position; items appear from bottom up
-static void draw_history_tree_vertical(HDC hdc, history_node_t *node, history_node_t *current_node,
-                                       int x, int *y_pos, int panel_height, int depth) {
-    if (!node) return;
+    int width = 24;  // Space for this node
 
-    int iconSize = 16;
-    int spacing = 24;  // Vertical spacing between items
-    int iconCenter = iconSize / 2;
-
-    // Draw current node
-    int curY = *y_pos;
-
-    // Don't draw if off-screen
-    if (curY >= 0 && curY <= panel_height) {
-        if (node->favicon_data) {
-            render_image_data(hdc, node->favicon_data, node->favicon_size, x, curY, iconSize, iconSize);
-        } else {
-            // Draw a globe-ish circle for Gemini or missing icons
-            HBRUSH hBrush = CreateSolidBrush(RGB(100, 150, 255));
-            HBRUSH oldBrush = SelectObject(hdc, hBrush);
-            Ellipse(hdc, x, curY, x + iconSize, curY + iconSize);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(hBrush);
-        }
-
-        // Draw red border around current node
-        if (node == current_node) {
-            HPEN hPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
-            HPEN oldPen = SelectObject(hdc, hPen);
-            HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-            Rectangle(hdc, x - 2, curY - 2, x + iconSize + 2, curY + iconSize + 2);
-            SelectObject(hdc, oldBrush);
-            SelectObject(hdc, oldPen);
-            DeleteObject(hPen);
-        }
-
-        // Draw connection line to first child if has children
-        if (node->children_count > 0) {
-            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
-            HPEN oldPen = SelectObject(hdc, hPen);
-            // Draw vertical line from bottom of this node to first child
-            MoveToEx(hdc, x + iconCenter, curY + iconSize, NULL);
-            LineTo(hdc, x + iconCenter, curY - spacing + iconSize / 2);
-            SelectObject(hdc, oldPen);
-            DeleteObject(hPen);
-        }
-    }
-
-    int nextY = *y_pos - spacing;  // Move up for next item
-    *y_pos = nextY;
-
-    // Draw children
-    // If single child (linear history): no indentation, go straight up
-    // If multiple children (branches): indent each child horizontally
-    if (node->children_count == 1) {
-        // Linear history - no indentation
-        draw_history_tree_vertical(hdc, node->children[0], current_node,
-                                  x, y_pos, panel_height, depth + 1);
-    } else if (node->children_count > 1) {
-        // Multiple branches - indent each child
+    if (node->children_count > 1) {
+        // Multiple children - they'll be laid out side by side
+        int children_width = 0;
         for (int i = 0; i < node->children_count; i++) {
-            draw_history_tree_vertical(hdc, node->children[i], current_node,
-                                      x + 24 + (i * 20), y_pos, panel_height, depth + 1);
+            children_width += calculate_node_width(node->children[i]);
         }
+        width = (children_width > width) ? children_width : width;
+    } else if (node->children_count == 1) {
+        // Single child - goes straight down
+        width = calculate_node_width(node->children[0]);
     }
+
+    return width;
 }
 
-// Hit test for history tree (vertical layout on left)
-static history_node_t* hit_test_vertical(history_node_t *node, int x, int *y_pos,
-                                         int panel_height, int hitX, int hitY) {
-    if (!node) return NULL;
+// Position nodes in a grid layout
+// Returns the next available x position
+typedef struct {
+    int x;
+    int y;
+} node_pos_t;
+
+static int layout_node_positions(history_node_t *node, node_pos_t *positions, int node_count,
+                                 int start_x, int start_y, int *pos_index) {
+    if (!node || *pos_index >= node_count) return start_x;
 
     int iconSize = 16;
     int spacing = 24;
-    int curY = *y_pos;
 
-    if (hitX >= x && hitX <= x + iconSize && hitY >= curY && hitY <= curY + iconSize) {
+    int node_idx = *pos_index;
+    positions[node_idx].x = start_x;
+    positions[node_idx].y = start_y;
+    (*pos_index)++;
+
+    int current_x = start_x;
+
+    if (node->children_count > 1) {
+        // Multiple children laid out horizontally below
+        for (int i = 0; i < node->children_count; i++) {
+            current_x = layout_node_positions(node->children[i], positions, node_count,
+                                             current_x, start_y - spacing, pos_index);
+        }
+    } else if (node->children_count == 1) {
+        // Single child goes straight down
+        current_x = layout_node_positions(node->children[0], positions, node_count,
+                                         start_x, start_y - spacing, pos_index);
+    }
+
+    return current_x;
+}
+
+// Get position index of a node
+static int find_node_position(history_node_t *root, history_node_t *target, int *index) {
+    if (!root) return -1;
+
+    static int current_index = 0;
+    if (root == target) {
+        int result = current_index;
+        current_index = 0;
+        return result;
+    }
+
+    current_index++;
+
+    for (int i = 0; i < root->children_count; i++) {
+        int result = find_node_position(root->children[i], target, index);
+        if (result >= 0) return result;
+    }
+
+    current_index--;
+    return -1;
+}
+
+// Count total nodes in tree
+static int count_tree_nodes(history_node_t *node) {
+    if (!node) return 0;
+    int count = 1;
+    for (int i = 0; i < node->children_count; i++) {
+        count += count_tree_nodes(node->children[i]);
+    }
+    return count;
+}
+
+// Draw lines between nodes (drawn first, so they appear behind icons)
+static void draw_connections(HDC hdc, history_node_t *node, node_pos_t *positions, int node_count,
+                             int base_x) {
+    if (!node) return;
+
+    int iconSize = 16;
+    int spacing = 24;
+
+    // Find this node's position
+    int my_idx = -1;
+    for (int i = 0; i < node_count; i++) {
+        // We'll use a simpler approach - just iterate through tree to find node
+        // For now, we'll draw connections as we go
+    }
+
+    if (node->children_count > 0) {
+        HPEN hPen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
+        HPEN oldPen = SelectObject(hdc, hPen);
+
+        // Find this node's position in our positions array
+        // This is inefficient but works for now
+        for (int n = 0; n < node_count; n++) {
+            if (positions[n].x == -1 && positions[n].y == -1) continue;
+
+            if (node->children_count == 1) {
+                // Single child - vertical line straight down
+                int child_y = positions[n].y - spacing;
+                MoveToEx(hdc, base_x + positions[n].x + iconSize/2, positions[n].y + iconSize, NULL);
+                LineTo(hdc, base_x + positions[n].x + iconSize/2, child_y + iconSize/2);
+            } else if (node->children_count > 1) {
+                // Multiple children - draw lines to each
+                for (int i = 0; i < node->children_count; i++) {
+                    // Draw line from parent to child area
+                    int child_y = positions[n].y - spacing;
+                    MoveToEx(hdc, base_x + positions[n].x + iconSize/2, positions[n].y + iconSize, NULL);
+                    LineTo(hdc, base_x + positions[n].x + iconSize/2, child_y + iconSize/2);
+                }
+            }
+        }
+
+        SelectObject(hdc, oldPen);
+        DeleteObject(hPen);
+    }
+
+    // Recursively draw connections for children
+    for (int i = 0; i < node->children_count; i++) {
+        draw_connections(hdc, node->children[i], positions, node_count, base_x);
+    }
+}
+
+// Forward declaration
+static void draw_nodes_at_positions(HDC hdc, history_node_t *node, node_pos_t *positions, int node_count,
+                                    history_node_t *current_node, int *pos_index, int base_x);
+
+// Draw the history tree as a proper grid layout
+static void draw_history_tree_grid(HDC hdc, history_tree_t *tree) {
+    if (!tree || !tree->root) return;
+
+    int iconSize = 16;
+    int base_x = 10;
+
+    // Count nodes
+    int node_count = count_tree_nodes(tree->root);
+    if (node_count <= 0) return;
+
+    // Allocate position array
+    node_pos_t *positions = malloc(sizeof(node_pos_t) * node_count);
+    for (int i = 0; i < node_count; i++) {
+        positions[i].x = -1;
+        positions[i].y = -1;
+    }
+
+    // Layout nodes
+    int pos_index = 0;
+    layout_node_positions(tree->root, positions, node_count, 0, g_panel_height - 10, &pos_index);
+
+    // Draw connection lines first (so they appear behind icons)
+    draw_connections(hdc, tree->root, positions, node_count, base_x);
+
+    // Draw icons and borders second
+    pos_index = 0;
+    draw_nodes_at_positions(hdc, tree->root, positions, node_count, tree->current, &pos_index, base_x);
+
+    free(positions);
+}
+
+// Helper function to draw nodes at their calculated positions
+static void draw_nodes_at_positions(HDC hdc, history_node_t *node, node_pos_t *positions, int node_count,
+                                    history_node_t *current_node, int *pos_index, int base_x) {
+    if (!node || *pos_index >= node_count) return;
+
+    int iconSize = 16;
+    int my_pos = *pos_index;
+    (*pos_index)++;
+
+    int x = base_x + positions[my_pos].x;
+    int y = positions[my_pos].y;
+
+    // Draw favicon
+    if (node->favicon_data) {
+        render_image_data(hdc, node->favicon_data, node->favicon_size, x, y, iconSize, iconSize);
+    } else {
+        HBRUSH hBrush = CreateSolidBrush(RGB(100, 150, 255));
+        HBRUSH oldBrush = SelectObject(hdc, hBrush);
+        Ellipse(hdc, x, y, x + iconSize, y + iconSize);
+        SelectObject(hdc, oldBrush);
+        DeleteObject(hBrush);
+    }
+
+    // Draw red border for current node
+    if (node == current_node) {
+        HPEN hPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+        HPEN oldPen = SelectObject(hdc, hPen);
+        HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, x - 2, y - 2, x + iconSize + 2, y + iconSize + 2);
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(hPen);
+    }
+
+    // Draw children
+    for (int i = 0; i < node->children_count; i++) {
+        draw_nodes_at_positions(hdc, node->children[i], positions, node_count, current_node, pos_index, base_x);
+    }
+}
+
+// Hit test against grid positions
+static history_node_t* hit_test_grid(history_node_t *node, node_pos_t *positions, int node_count,
+                                     int *pos_index, int base_x, int hitX, int hitY) {
+    if (!node || *pos_index >= node_count) return NULL;
+
+    int iconSize = 16;
+    int my_pos = *pos_index;
+    (*pos_index)++;
+
+    int x = base_x + positions[my_pos].x;
+    int y = positions[my_pos].y;
+
+    // Check if hit this node
+    if (hitX >= x && hitX <= x + iconSize && hitY >= y && hitY <= y + iconSize) {
         return node;
     }
 
-    *y_pos -= spacing;
-
-    // Hit test children with same indentation logic as rendering
-    if (node->children_count == 1) {
-        // Linear history - no indentation
-        return hit_test_vertical(node->children[0], x, y_pos, panel_height, hitX, hitY);
-    } else if (node->children_count > 1) {
-        // Multiple branches - each child indented
-        for (int i = 0; i < node->children_count; i++) {
-            history_node_t *res = hit_test_vertical(node->children[i], x + 24 + (i * 20), y_pos,
-                                                   panel_height, hitX, hitY);
-            if (res) return res;
-        }
+    // Check children
+    for (int i = 0; i < node->children_count; i++) {
+        history_node_t *res = hit_test_grid(node->children[i], positions, node_count,
+                                           pos_index, base_x, hitX, hitY);
+        if (res) return res;
     }
+
     return NULL;
 }
 
@@ -210,30 +343,35 @@ static history_node_t* hit_test_horizontal(history_node_t *node, int *x, int y, 
     return NULL;
 }
 
-// Public interface: Draw history tree
-// Uses vertical layout with items appearing from bottom-to-top on the left
+// Public interface: Draw history tree using grid layout
 void history_ui_draw(HDC hdc, history_tree_t *tree) {
     if (!tree || !tree->root) return;
 
-    #ifdef HISTORY_LAYOUT_VERTICAL_LEFT
-    int y_pos = g_panel_height - 10;  // Start from bottom
-    draw_history_tree_vertical(hdc, tree->root, tree->current, 10, &y_pos, g_panel_height, 0);
-    #else
-    int x = 10;
-    draw_history_tree_horizontal(hdc, tree->root, &x, 10);
-    #endif
+    draw_history_tree_grid(hdc, tree);
 }
 
-// Public interface: Hit test history tree
-// Uses vertical layout with items appearing from bottom-to-top on the left
+// Public interface: Hit test history tree using grid layout
 history_node_t* history_ui_hit_test(history_tree_t *tree, int hitX, int hitY) {
     if (!tree || !tree->root) return NULL;
 
-    #ifdef HISTORY_LAYOUT_VERTICAL_LEFT
-    int y_pos = g_panel_height - 10;  // Start from bottom
-    return hit_test_vertical(tree->root, 10, &y_pos, g_panel_height, hitX, hitY);
-    #else
-    int x = 10;
-    return hit_test_horizontal(tree->root, &x, 10, hitX, hitY);
-    #endif
+    int node_count = count_tree_nodes(tree->root);
+    if (node_count <= 0) return NULL;
+
+    // Allocate position array
+    node_pos_t *positions = malloc(sizeof(node_pos_t) * node_count);
+    for (int i = 0; i < node_count; i++) {
+        positions[i].x = -1;
+        positions[i].y = -1;
+    }
+
+    // Layout nodes
+    int pos_index = 0;
+    layout_node_positions(tree->root, positions, node_count, 0, g_panel_height - 10, &pos_index);
+
+    // Hit test
+    pos_index = 0;
+    history_node_t *result = hit_test_grid(tree->root, positions, node_count, &pos_index, 10, hitX, hitY);
+
+    free(positions);
+    return result;
 }
