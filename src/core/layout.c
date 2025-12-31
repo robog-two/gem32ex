@@ -432,25 +432,29 @@ layout_box_t* layout_create_tree(node_t *root, int container_width) {
 layout_box_t* layout_hit_test(layout_box_t *root, int x, int y) {
     if (!root) return NULL;
 
-    if (x >= root->fragment.border_box.x &&
-        x < root->fragment.border_box.x + root->fragment.border_box.width &&
-        y >= root->fragment.border_box.y &&
-        y < root->fragment.border_box.y + root->fragment.border_box.height) {
+    int is_container = (root->node->style->display == DISPLAY_INLINE && is_inline_container(root->node->tag_name));
 
-        int local_x = x - root->fragment.border_box.x;
-        int local_y = y - root->fragment.border_box.y;
-
-        layout_box_t *hit = NULL;
-        layout_box_t *child = root->first_child;
-        while (child) {
-            layout_box_t *result = layout_hit_test(child, local_x, local_y);
-            if (result) hit = result;
-            child = child->next_sibling;
+    if (!is_container) {
+        if (x < root->fragment.border_box.x ||
+            x >= root->fragment.border_box.x + root->fragment.border_box.width ||
+            y < root->fragment.border_box.y ||
+            y >= root->fragment.border_box.y + root->fragment.border_box.height) {
+            return NULL;
         }
-
-        if (hit) return hit;
-        return root;
     }
 
-    return NULL;
+    int local_x = x - root->fragment.border_box.x;
+    int local_y = y - root->fragment.border_box.y;
+
+    layout_box_t *hit = NULL;
+    layout_box_t *child = root->first_child;
+    while (child) {
+        layout_box_t *result = layout_hit_test(child, local_x, local_y);
+        if (result) hit = result;
+        child = child->next_sibling;
+    }
+
+    if (hit) return hit;
+    if (is_container) return NULL; // Container itself has no size/hit
+    return root;
 }
