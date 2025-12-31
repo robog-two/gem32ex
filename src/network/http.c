@@ -33,6 +33,7 @@ static network_response_t* perform_http_request(const char *url, const char *met
     urlComp.dwSchemeLength = 1; // Set to non-zero to crack scheme
 
     if (!InternetCrackUrl(url, 0, 0, &urlComp)) {
+        LOG_ERROR("InternetCrackUrl failed for %s", url);
         InternetCloseHandle(hInternet);
         return NULL;
     }
@@ -40,8 +41,11 @@ static network_response_t* perform_http_request(const char *url, const char *met
     // Default path if empty
     if (strlen(path) == 0) strcpy(path, "/");
 
+    LOG_DEBUG("Cracked URL: Host=%s, Port=%d, Path=%s, Scheme=%d", host, urlComp.nPort, path, urlComp.nScheme);
+
     HINTERNET hConnect = InternetConnect(hInternet, host, urlComp.nPort, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
+        LOG_ERROR("InternetConnect failed with error %lu", GetLastError());
         InternetCloseHandle(hInternet);
         return NULL;
     }
@@ -49,10 +53,13 @@ static network_response_t* perform_http_request(const char *url, const char *met
     DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
     if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
         flags |= INTERNET_FLAG_SECURE;
+        flags |= INTERNET_FLAG_IGNORE_CERT_CN_INVALID;
+        flags |= INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
     }
 
     HINTERNET hRequest = HttpOpenRequest(hConnect, method, path, NULL, NULL, NULL, flags, 0);
     if (!hRequest) {
+        LOG_ERROR("HttpOpenRequest failed with error %lu", GetLastError());
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return NULL;
