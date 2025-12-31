@@ -174,6 +174,7 @@ static int is_png(const void *data, size_t size) {
            bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A;
 }
 
+
 void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, int h) {
     if (!data || size == 0) return;
 
@@ -221,7 +222,13 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
                 fn_GdipDisposeImage((GpImage*)bitmap);
             } else if (status != 0) {
                 if (is_png_file) {
-                    LOG_WARN("GDI+ failed to load PNG (status %d) - GDI+ may not be properly installed or updated for PNG support", (int)status);
+                    // PNG codec issue - likely GDI+ version or installation problem
+                    // GdiplusStatus codes: 1=GenericError, 2=InvalidParameter, 4=NotImplemented, etc.
+                    LOG_WARN("GDI+ PNG codec failed (status %d). This is usually caused by:", (int)status);
+                    LOG_WARN("  1) GDI+ not installed or outdated (requires update KB976519)");
+                    LOG_WARN("  2) PNG with unusual compression or color profile");
+                    LOG_WARN("  3) Interlaced PNG format not supported");
+                    LOG_WARN("  Workaround: Update gdiplus.dll or convert PNG to JPG/BMP");
                 } else {
                     LOG_DEBUG("GDI+ failed to load image (status %d), trying OleLoadPicture", (int)status);
                 }
@@ -254,7 +261,11 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
         }
 
         if (!drawn && is_png_file) {
-            LOG_ERROR("PNG image could not be rendered. Ensure GDI+ is properly installed on Windows XP. PNG images require GDI+ support which is available on Windows XP SP3 but may require manual installation or update of gdiplus.dll");
+            LOG_ERROR("PNG image could not be rendered (size %lu bytes)", (unsigned long)size);
+            LOG_ERROR("PNG support requires GDI+ to be properly installed on Windows XP SP3");
+            LOG_ERROR("Solutions: 1) Install Windows GDI+ update KB976519");
+            LOG_ERROR("          2) Download and run gdiplus_redistributable from Microsoft");
+            LOG_ERROR("          3) Convert PNG images to JPG or BMP format");
         }
 
         pStream->lpVtbl->Release(pStream);
