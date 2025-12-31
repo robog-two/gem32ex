@@ -22,12 +22,32 @@ static int send_all(SOCKET s, const char *buf, int len) {
     return total;
 }
 
+static void log_sspi_error(const char *context, SECURITY_STATUS status) {
+    char buffer[1024];
+    DWORD len = FormatMessageA(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_FROM_HMODULE,
+        GetModuleHandleA("secur32.dll"),
+        status,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        buffer,
+        sizeof(buffer),
+        NULL
+    );
+    if (len > 0) {
+        while (len > 0 && (buffer[len-1] == '\r' || buffer[len-1] == '\n')) buffer[--len] = '\0';
+        LOG_ERROR("%s failed: %s (0x%lx)", context, buffer, status);
+    } else {
+        LOG_ERROR("%s failed: Unknown error 0x%lx", context, status);
+    }
+}
+
 static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI, PCredHandle phCreds, const char* szHostName, PCtxtHandle phContext, char **extra_data, int *extra_data_len) {
     SecBufferDesc outBufferDesc, inBufferDesc;
     SecBuffer outBuffer[1], inBuffer[2];
     DWORD dwSSPIFlags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | 
                         ISC_RET_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM |
-                        ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_USE_SUPPLIED_CREDS;
+                        ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_USE_SUPPLIED_CREDS |
+                        ISC_REQ_EXTENDED_ERROR;
     SECURITY_STATUS scRet;
 
     outBufferDesc.ulVersion = SECBUFFER_VERSION;
@@ -38,14 +58,17 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
     outBuffer[0].cbBuffer = 0;
 
     scRet = pSSPI->InitializeSecurityContextA(phCreds, NULL, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, NULL, 0, phContext, &outBufferDesc, &dwSSPIFlags, NULL);
-    if (scRet != SEC_I_CONTINUE_NEEDED) return scRet;
+    if (scRet != SEC_I_CONTINUE_NEEDED) {
+        log_sspi_error("InitializeSecurityContext (Initial)", scRet);
+        return scRet;
+    }
 
     if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
         send_all(s, outBuffer[0].pvBuffer, outBuffer[0].cbBuffer);
         pSSPI->FreeContextBuffer(outBuffer[0].pvBuffer);
     }
 
-    char readBuf[8192];
+    char readBuf[16384];
     int readOffset = 0;
     BOOL bDone = FALSE;
 
@@ -85,7 +108,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
             }
             
             if (FAILED(scRet)) {
-                LOG_ERROR("InitializeSecurityContext failed: 0x%lx", scRet);
+                log_sspi_error("InitializeSecurityContext", scRet);
                 return scRet;
             }
 
@@ -99,7 +122,6 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                 }
                 bDone = TRUE;
             } else {
-                // SEC_I_CONTINUE_NEEDED
                 if (inBuffer[1].BufferType == SECBUFFER_EXTRA) {
                     memmove(readBuf, (char*)inBuffer[0].pvBuffer + (inBuffer[0].cbBuffer - inBuffer[1].cbBuffer), inBuffer[1].cbBuffer);
                     readOffset = inBuffer[1].cbBuffer;
@@ -108,10 +130,9 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PSecurityFunctionTableA pSSPI,
                 }
             }
         } else if (scRet == SEC_E_INCOMPLETE_MESSAGE) {
-            // Keep existing data and read more
             continue;
         } else {
-            LOG_ERROR("InitializeSecurityContext final error: 0x%lx", scRet);
+            log_sspi_error("InitializeSecurityContext (Final)", scRet);
             return scRet;
         }
     }
