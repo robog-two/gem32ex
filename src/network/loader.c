@@ -28,7 +28,7 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
                     snprintf(full_url, 1023, "%s/%s", base_url, src);
                 }
 
-                network_response_t *res = http_fetch(full_url);
+                network_response_t *res = network_fetch(full_url);
                 if (res) {
                     node->image_data = res->data;
                     node->image_size = res->size;
@@ -46,7 +46,7 @@ void loader_fetch_resources(node_t *node, const char *base_url) {
                     snprintf(full_url, 1023, "%s/%s", base_url, src);
                 }
 
-                network_response_t *res = http_fetch(full_url);
+                network_response_t *res = network_fetch(full_url);
                 if (res && res->data) {
                     node->iframe_doc = html_parse(res->data);
                     // Recursively fetch resources for the iframe

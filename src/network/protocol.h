@@ -15,8 +15,12 @@ typedef struct {
     size_t size;
     char *content_type;
     int status_code;
+    char *final_url; // The URL after all redirects
 } network_response_t;
 
 void network_response_free(network_response_t *res);
+
+network_response_t* network_fetch(const char *url);
+network_response_t* network_post(const char *url, const char *body, const char *content_type);
 
 #endif // PROTOCOL_H

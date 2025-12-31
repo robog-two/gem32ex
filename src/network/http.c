@@ -120,6 +120,25 @@ static network_response_t* perform_http_request(const char *url, const char *met
         res->status_code = (int)statusCode;
     }
 
+    // Get Final URL (WinInet might have followed redirects)
+    char finalUrl[2048];
+    DWORD fuSize = sizeof(finalUrl);
+    if (InternetQueryOption(hRequest, INTERNET_OPTION_URL, finalUrl, &fuSize)) {
+        res->final_url = strdup(finalUrl);
+    }
+
+    // If it's a redirect and we didn't follow it (or it's a cross-protocol one WinInet won't do)
+    if (res->status_code >= 300 && res->status_code <= 308) {
+        char locBuffer[2048];
+        DWORD locSize = sizeof(locBuffer);
+        index = 0;
+        if (HttpQueryInfo(hRequest, HTTP_QUERY_LOCATION, locBuffer, &locSize, &index)) {
+            // Store redirect location in data if body is empty, or handle in protocol.c
+            res->data = strdup(locBuffer);
+            res->size = strlen(locBuffer);
+        }
+    }
+
     InternetCloseHandle(hRequest);
     InternetCloseHandle(hConnect);
     InternetCloseHandle(hInternet);

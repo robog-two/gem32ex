@@ -113,9 +113,9 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
 }
 
 static void Navigate(HWND hwnd, const char *url) {
-    network_response_t *res = http_fetch(url);
+    network_response_t *res = network_fetch(url);
     if (res) {
-        ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, url);
+        ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, res->final_url ? res->final_url : url);
         network_response_free(res);
     } else {
         MessageBox(hwnd, "Failed to fetch URL", "Error", MB_ICONERROR);
