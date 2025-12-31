@@ -118,10 +118,19 @@ static void draw_history_tree_vertical(HDC hdc, history_node_t *node, history_no
     int nextY = *y_pos - spacing;  // Move up for next item
     *y_pos = nextY;
 
-    // Draw children at increased horizontal offset (indentation)
-    for (int i = 0; i < node->children_count; i++) {
-        draw_history_tree_vertical(hdc, node->children[i], current_node,
-                                  x + 24, y_pos, panel_height, depth + 1);
+    // Draw children
+    // If single child (linear history): no indentation, go straight up
+    // If multiple children (branches): indent each child horizontally
+    if (node->children_count == 1) {
+        // Linear history - no indentation
+        draw_history_tree_vertical(hdc, node->children[0], current_node,
+                                  x, y_pos, panel_height, depth + 1);
+    } else if (node->children_count > 1) {
+        // Multiple branches - indent each child
+        for (int i = 0; i < node->children_count; i++) {
+            draw_history_tree_vertical(hdc, node->children[i], current_node,
+                                      x + 24 + (i * 20), y_pos, panel_height, depth + 1);
+        }
     }
 }
 
@@ -140,10 +149,17 @@ static history_node_t* hit_test_vertical(history_node_t *node, int x, int *y_pos
 
     *y_pos -= spacing;
 
-    for (int i = 0; i < node->children_count; i++) {
-        history_node_t *res = hit_test_vertical(node->children[i], x + 24, y_pos,
-                                               panel_height, hitX, hitY);
-        if (res) return res;
+    // Hit test children with same indentation logic as rendering
+    if (node->children_count == 1) {
+        // Linear history - no indentation
+        return hit_test_vertical(node->children[0], x, y_pos, panel_height, hitX, hitY);
+    } else if (node->children_count > 1) {
+        // Multiple branches - each child indented
+        for (int i = 0; i < node->children_count; i++) {
+            history_node_t *res = hit_test_vertical(node->children[i], x + 24 + (i * 20), y_pos,
+                                                   panel_height, hitX, hitY);
+            if (res) return res;
+        }
     }
     return NULL;
 }
