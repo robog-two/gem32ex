@@ -134,7 +134,7 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         className,
         "Gem32 Browser",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,
+        CW_USEDEFAULT, CW_USEDEFAULT, 600, 400,
         NULL, NULL, hInstance, NULL
     );
 
