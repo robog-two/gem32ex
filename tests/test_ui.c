@@ -60,6 +60,45 @@ static LRESULT CALLBACK TestWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     return 0;
 }
 
+static HICON CreateCheckmarkIcon() {
+    int size = 16;
+    HDC hdc = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdc);
+    
+    // Color bitmap
+    HBITMAP hbmColor = CreateCompatibleBitmap(hdc, size, size);
+    HBITMAP hbmOld = SelectObject(hdcMem, hbmColor);
+    RECT r = {0, 0, size, size};
+    FillRect(hdcMem, &r, (HBRUSH)GetStockObject(WHITE_BRUSH)); // Background for non-transparent parts
+    HPEN hPen = CreatePen(PS_SOLID, 2, RGB(0, 180, 0));
+    HPEN hPenOld = SelectObject(hdcMem, hPen);
+    MoveToEx(hdcMem, 3, 8, NULL); LineTo(hdcMem, 7, 12); LineTo(hdcMem, 13, 4);
+    SelectObject(hdcMem, hPenOld); DeleteObject(hPen);
+    SelectObject(hdcMem, hbmOld);
+
+    // Mask bitmap (black = opaque, white = transparent)
+    HBITMAP hbmMask = CreateBitmap(size, size, 1, 1, NULL);
+    SelectObject(hdcMem, hbmMask);
+    FillRect(hdcMem, &r, (HBRUSH)GetStockObject(WHITE_BRUSH)); // All transparent
+    hPen = CreatePen(PS_SOLID, 2, RGB(0, 0, 0)); // Black for the shape
+    hPenOld = SelectObject(hdcMem, hPen);
+    MoveToEx(hdcMem, 3, 8, NULL); LineTo(hdcMem, 7, 12); LineTo(hdcMem, 13, 4);
+    SelectObject(hdcMem, hPenOld); DeleteObject(hPen);
+    
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdc);
+
+    ICONINFO ii = {0};
+    ii.fIcon = TRUE;
+    ii.hbmMask = hbmMask;
+    ii.hbmColor = hbmColor;
+    HICON hIcon = CreateIconIndirect(&ii);
+    
+    DeleteObject(hbmColor);
+    DeleteObject(hbmMask);
+    return hIcon;
+}
+
 void test_ui_show(void) {
     HINSTANCE hInstance = GetModuleHandle(NULL);
     InitCommonControls();
@@ -83,10 +122,8 @@ void test_ui_show(void) {
     HWND hStatus = CreateWindow("STATIC", summary, WS_VISIBLE | WS_CHILD | SS_CENTERIMAGE, 
                                10, 10, 680, 30, hwnd, (HMENU)2, hInstance, NULL);
     
-    // Set a nicer font for summary
     SendMessage(hStatus, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
 
-    // Progress Bar
     HWND hProgress = CreateWindow(PROGRESS_CLASS, NULL, WS_VISIBLE | WS_CHILD | PBS_SMOOTH,
                                  10, 45, 680, 20, hwnd, (HMENU)3, hInstance, NULL);
     SendMessage(hProgress, PBM_SETRANGE, 0, MAKELPARAM(0, g_test_count));
@@ -98,8 +135,12 @@ void test_ui_show(void) {
                                10, 75, 680, 380, hwnd, (HMENU)1, hInstance, NULL);
 
     HIMAGELIST hImg = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 2, 2);
-    ImageList_AddIcon(hImg, LoadIcon(NULL, IDI_ASTERISK)); // Pass
-    ImageList_AddIcon(hImg, LoadIcon(NULL, IDI_HAND));     // Fail (X)
+    
+    HICON hCheck = CreateCheckmarkIcon();
+    ImageList_AddIcon(hImg, hCheck);
+    DestroyIcon(hCheck);
+    
+    ImageList_AddIcon(hImg, LoadIcon(NULL, IDI_HAND)); // Fail (X)
     TreeView_SetImageList(hTree, hImg, TVSIL_NORMAL);
 
     // Use monospaced font for the console look
