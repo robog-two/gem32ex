@@ -2,38 +2,23 @@
 #include <windows.h>
 #include <stdio.h>
 #include <stdarg.h>
-#include <io.h>
-#include <fcntl.h>
-
-static int g_has_console = 0;
 
 void log_init(void) {
-    // Try to attach to the parent's console
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        g_has_console = 1;
-    } else if (GetLastError() == ERROR_ACCESS_DENIED) {
-        // Already attached to a console
-        g_has_console = 1;
-    }
-
-    if (g_has_console) {
-        // Redirect CRT standard streams to the console
-        freopen("CONOUT$", "w", stdout);
-        freopen("CONOUT$", "w", stderr);
-        setvbuf(stdout, NULL, _IONBF, 0);
-        setvbuf(stderr, NULL, _IONBF, 0);
-    }
+    // Just ensure output is unbuffered so it shows up immediately in the console
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
 }
 
 void log_msg(log_level_t level, const char* format, ...) {
     char buffer[1024];
     const char* level_str = "INFO";
+    FILE* out = stdout;
     
     switch (level) {
         case LOG_LEVEL_DEBUG: level_str = "DEBUG"; break;
         case LOG_LEVEL_INFO:  level_str = "INFO "; break;
-        case LOG_LEVEL_WARN:  level_str = "WARN "; break;
-        case LOG_LEVEL_ERROR: level_str = "ERROR"; break;
+        case LOG_LEVEL_WARN:  level_str = "WARN "; out = stderr; break;
+        case LOG_LEVEL_ERROR: level_str = "ERROR"; out = stderr; break;
     }
 
     va_list args;
@@ -42,15 +27,12 @@ void log_msg(log_level_t level, const char* format, ...) {
     va_end(args);
 
     if (len > 0) {
-        // Always output to debug stream
+        // Print to the actual standard streams
+        fprintf(out, "[%s] %s\n", level_str, buffer);
+        
+        // Also always output to debug stream (for DebugView/IDE)
         char debug_buffer[1100];
         _snprintf(debug_buffer, sizeof(debug_buffer), "[%s] %s\n", level_str, buffer);
         OutputDebugString(debug_buffer);
-
-        // Output to console if we have one
-        if (g_has_console) {
-            fprintf(stdout, "[%s] %s\n", level_str, buffer);
-            fflush(stdout);
-        }
     }
 }

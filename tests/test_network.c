@@ -8,9 +8,12 @@
 
 static int assert_net(int condition, const char *msg, int *failed) {
     if (condition) {
+        printf("[ PASS ] %s\n", msg);
+        fflush(stdout);
         return 0;
     } else {
         printf("[ FAIL ] %s\n", msg);
+        fflush(stdout);
         (*failed)++;
         return 1;
     }
@@ -19,6 +22,7 @@ static int assert_net(int condition, const char *msg, int *failed) {
 void run_network_tests(int *total_failed) {
     int local_failed = 0;
     printf("Running network tests...\n");
+    fflush(stdout);
 
     // TLS Test
     tls_connection_t *conn = tls_connect("google.com", 443);

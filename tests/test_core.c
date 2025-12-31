@@ -8,9 +8,12 @@
 
 static int assert_core(int condition, const char *msg, int *failed) {
     if (condition) {
+        printf("[ PASS ] %s\n", msg);
+        fflush(stdout);
         return 0;
     } else {
         printf("[ FAIL ] %s\n", msg);
+        fflush(stdout);
         (*failed)++;
         return 1;
     }
@@ -29,6 +32,7 @@ void platform_measure_text(const char *text, style_t *style, int width_constrain
 void run_core_tests(int *total_failed) {
     int local_failed = 0;
     printf("Running core engine tests...\n");
+    fflush(stdout);
 
     // HTML/DOM Test
     const char *html = "<html><body><h1 id='t'>Title</h1></body></html>";

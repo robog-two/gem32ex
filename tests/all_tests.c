@@ -7,7 +7,9 @@ void run_network_tests(int *failed_count);
 void run_core_tests(int *failed_count);
 
 int main() {
-    log_init();
+    // Ensure output is visible immediately
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
     
     int total_failed = 0;
     
