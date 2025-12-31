@@ -135,7 +135,10 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
             
             // Border if set
             if (box->node->style->border_width > 0) {
-                HPEN hPen = CreatePen(PS_SOLID, box->node->style->border_width, RGB(0, 0, 0));
+                COLORREF borderColor = RGB(0, 0, 0);
+                if (box->node == g_focused_node) borderColor = RGB(0, 120, 215); // Focused blue
+                
+                HPEN hPen = CreatePen(PS_SOLID, box->node->style->border_width, borderColor);
                 HPEN oldPen = SelectObject(hdc, hPen);
                 HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
                 

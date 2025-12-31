@@ -28,6 +28,7 @@ static void HandleClick(HWND hwnd, int x, int y);
 static history_tree_t *g_history = NULL;
 static layout_box_t *g_current_layout = NULL;
 static node_t *g_current_dom = NULL;
+static node_t *g_focused_node = NULL;
 static char g_current_url[2048] = {0};
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
@@ -118,10 +119,21 @@ static void HandleClick(HWND hContent, int x, int y) {
     if (!g_current_layout) return;
     
     layout_box_t *hit = layout_hit_test(g_current_layout, x, y);
-    if (!hit || !hit->node) return;
+    if (!hit || !hit->node) {
+        g_focused_node = NULL;
+        return;
+    }
     
     node_t *node = hit->node;
     if (node->type == DOM_NODE_ELEMENT && node->tag_name) {
+        // Handle Focus
+        if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "textarea") == 0) {
+            g_focused_node = node;
+            SetFocus(hContent);
+        } else {
+            g_focused_node = NULL;
+        }
+
         int is_submit = 0;
         if (strcasecmp(node->tag_name, "button") == 0) is_submit = 1;
         if (strcasecmp(node->tag_name, "input") == 0) {
@@ -137,10 +149,15 @@ static void HandleClick(HWND hContent, int x, int y) {
 
                 g_current_dom = html_parse(res->data);
                 if (g_current_dom) {
+                    loader_fetch_resources(g_current_dom, g_current_url); // TODO: Form might have changed URL
                     style_compute(g_current_dom);
                     RECT rect;
                     GetClientRect(hContent, &rect);
                     g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
+                    
+                    // Add to history
+                    history_add(g_history, g_current_url, "Form Result");
+                    
                     InvalidateRect(hContent, NULL, TRUE);
                 }
                 network_response_free(res);
@@ -153,6 +170,26 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     switch (msg) {
         case WM_LBUTTONDOWN:
             HandleClick(hwnd, LOWORD(lParam), HIWORD(lParam));
+            break;
+        case WM_CHAR:
+            if (g_focused_node) {
+                char c = (char)wParam;
+                if (c == '\b') { // Backspace
+                    if (g_focused_node->current_value) {
+                        size_t len = strlen(g_focused_node->current_value);
+                        if (len > 0) g_focused_node->current_value[len - 1] = '\0';
+                    }
+                } else if (c >= 32) { // Printable chars
+                    size_t len = g_focused_node->current_value ? strlen(g_focused_node->current_value) : 0;
+                    char *new_val = realloc(g_focused_node->current_value, len + 2);
+                    if (new_val) {
+                        new_val[len] = c;
+                        new_val[len + 1] = '\0';
+                        g_focused_node->current_value = new_val;
+                    }
+                }
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
             break;
         case WM_PAINT: {
             PAINTSTRUCT ps;
