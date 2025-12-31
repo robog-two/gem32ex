@@ -13,6 +13,14 @@ static int is_void_element(const char *tag) {
     return 0;
 }
 
+static int is_raw_text_element(const char *tag) {
+    if (!tag) return 0;
+    return (strcasecmp(tag, "script") == 0 || 
+            strcasecmp(tag, "style") == 0 || 
+            strcasecmp(tag, "textarea") == 0 || 
+            strcasecmp(tag, "title") == 0);
+}
+
 node_t* html_parse(const char *html) {
     if (!html) {
         LOG_WARN("html_parse called with NULL input");
@@ -26,6 +34,36 @@ node_t* html_parse(const char *html) {
 
     const char *p = html;
     while (*p) {
+        // Handle Raw Text Elements (script, style, etc.)
+        if (current != root && current->type == DOM_NODE_ELEMENT && is_raw_text_element(current->tag_name)) {
+            char closing_tag[128];
+            snprintf(closing_tag, sizeof(closing_tag), "</%s>", current->tag_name);
+            size_t close_len = strlen(closing_tag);
+
+            const char *end = p;
+            int found = 0;
+            while (*end) {
+                if (strncasecmp(end, closing_tag, close_len) == 0) {
+                    found = 1;
+                    break;
+                }
+                end++;
+            }
+
+            size_t len = end - p;
+            if (len > 0) {
+                node_t *text = node_create(DOM_NODE_TEXT);
+                text->content = malloc(len + 1);
+                memcpy(text->content, p, len);
+                text->content[len] = '\0';
+                node_add_child(current, text);
+            }
+
+            p = end;
+            if (!found) break; // End of string, implicitly close
+            // If found, p points to start of closing tag. Fall through to standard tag parsing.
+        }
+
         if (*p == '<') {
             p++;
             if (*p == '!') { // Comment or DOCTYPE

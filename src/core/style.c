@@ -63,6 +63,8 @@ static void parse_css_property(style_t *style, char *name, char *val) {
     end = val + strlen(val) - 1;
     while (end > val && (*end == ' ' || *end == '\t' || *end == '\n')) *end-- = '\0';
 
+    if (name[0] == '-') return; // Ignore variables and vendor prefixes
+
     if (strcasecmp(name, "position") == 0) {
         if (strcasecmp(val, "absolute") == 0) style->position = POSITION_ABSOLUTE;
         else if (strcasecmp(val, "relative") == 0) style->position = POSITION_RELATIVE;
