@@ -7,6 +7,7 @@
 #include "core/layout.h"
 #include "ui/history.h"
 #include "ui/bookmarks.h"
+#include "ui/render.h"
 
 #define ID_BTN_STAR 101
 #define ID_EDIT_URL 102
@@ -18,15 +19,19 @@
 #define HISTORY_HEIGHT 150
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
 static void Navigate(HWND hwnd, const char *url);
 
 static history_tree_t *g_history = NULL;
+static layout_box_t *g_current_layout = NULL;
+static node_t *g_current_dom = NULL;
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_history = history_create();
+    
+    // Register Main Window Class
     const char className[] = "Gem32BrowserClass";
-
     WNDCLASS wc = {0};
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
@@ -34,10 +39,18 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
 
-    if (!RegisterClass(&wc)) {
-        MessageBox(NULL, "Window Registration Failed!", "Error", MB_ICONEXCLAMATION | MB_OK);
-        return FALSE;
-    }
+    if (!RegisterClass(&wc)) return FALSE;
+
+    // Register Content Window Class
+    const char contentClassName[] = "Gem32ContentClass";
+    WNDCLASS wcc = {0};
+    wcc.lpfnWndProc = ContentWndProc;
+    wcc.hInstance = hInstance;
+    wcc.lpszClassName = contentClassName;
+    wcc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wcc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // White background
+    
+    if (!RegisterClass(&wcc)) return FALSE;
 
     HWND hwnd = CreateWindowEx(
         0,
@@ -48,10 +61,7 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         NULL, NULL, hInstance, NULL
     );
 
-    if (hwnd == NULL) {
-        MessageBox(NULL, "Window Creation Failed!", "Error", MB_ICONEXCLAMATION | MB_OK);
-        return FALSE;
-    }
+    if (hwnd == NULL) return FALSE;
 
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
@@ -62,13 +72,31 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 static void Navigate(HWND hwnd, const char *url) {
     network_response_t *res = http_fetch(url);
     if (res && res->data) {
-        node_t *dom = html_parse(res->data);
-        if (dom) {
-            style_compute(dom);
-            // Layout and render would happen here in a full implementation
+        // Free previous DOM and Layout
+        if (g_current_layout) {
+            layout_free(g_current_layout);
+            g_current_layout = NULL;
+        }
+        if (g_current_dom) {
+            node_free(g_current_dom);
+            g_current_dom = NULL;
+        }
+
+        g_current_dom = html_parse(res->data);
+        if (g_current_dom) {
+            style_compute(g_current_dom);
+            
+            HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
+            RECT rect;
+            GetClientRect(hContent, &rect);
+            int width = rect.right - rect.left;
+            
+            g_current_layout = layout_create_tree(g_current_dom, width);
+            
             history_add(g_history, url, "Title Placeholder");
-            SetWindowText(GetDlgItem(hwnd, ID_CONTENT), "Page Loaded Successfully");
-            node_free(dom);
+            
+            // Trigger repaint
+            InvalidateRect(hContent, NULL, TRUE);
         }
         network_response_free(res);
     } else {
@@ -76,10 +104,33 @@ static void Navigate(HWND hwnd, const char *url) {
     }
 }
 
+static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+            
+            // Basic font setup
+            HFONT hFont = GetStockObject(DEFAULT_GUI_FONT);
+            SelectObject(hdc, hFont);
+
+            if (g_current_layout) {
+                render_tree(hdc, g_current_layout, 0, 0);
+            } else {
+                TextOut(hdc, 10, 10, "No content loaded.", 18);
+            }
+
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE:
-            // Top Bar: Star Button
             CreateWindow(
                 "BUTTON", "*",
                 WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
@@ -88,7 +139,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
 
-            // Top Bar: URL Bar
             CreateWindow(
                 "EDIT", "http://google.com",
                 WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
@@ -97,7 +147,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
 
-            // Top Bar: Go Button
             CreateWindow(
                 "BUTTON", "Go",
                 WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
@@ -106,16 +155,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
 
-            // Content Area
+            // Use our custom class for content
             CreateWindow(
-                "STATIC", "Content Area",
-                WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER,
+                "Gem32ContentClass", NULL, 
+                WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL, 
                 0, 0, 0, 0,
                 hwnd, (HMENU)ID_CONTENT,
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
             );
 
-            // History Tree Area
             CreateWindow(
                 "STATIC", "Git-Style History Tree",
                 WS_VISIBLE | WS_CHILD | WS_BORDER | SS_CENTERIMAGE | SS_CENTER,
