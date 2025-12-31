@@ -1,8 +1,8 @@
 CC = i686-w64-mingw32-gcc
 CFLAGS = -std=c99 -Wall -Wextra -Isrc -D_WIN32_WINNT=0x0501
 # Static linking for OpenSSL and runtime libraries for Windows XP compatibility
-# Library order matters: OpenSSL libs first, then their dependencies (ws2_32, crypt32, etc.)
-LDFLAGS = -static -static-libgcc -mwindows -lssl -lcrypto -lws2_32 -lcrypt32 -lcomctl32 -lgdi32 -lwininet -lole32 -loleaut32 -luuid -lz
+# Library order matters: OpenSSL libs first, then ALL their Windows dependencies
+LDFLAGS = -static -static-libgcc -mwindows -lssl -lcrypto -lws2_32 -lcrypt32 -lgdi32 -ladvapi32 -luser32 -lcomctl32 -lwininet -lole32 -loleaut32 -luuid -lz
 
 CORE_SRC = src/core/dom.c src/core/html.c src/core/style.c src/core/layout.c src/core/log.c
 SRC = src/main.c src/ui/window.c src/ui/history.c src/ui/bookmarks.c src/ui/render.c src/ui/form.c src/network/http.c src/network/gemini.c src/network/loader.c src/network/protocol.c src/network/tls.c $(CORE_SRC)
