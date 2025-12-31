@@ -1,18 +1,38 @@
 #include "render.h"
 #include <stdio.h>
+#include <olectl.h>
 
 static void set_color_from_style(HDC hdc, style_t *style) {
     if (!style) return;
-    // Simple color conversion: 0xRRGGBB -> RGB(R, G, B)
-    // HTML often uses RGB, Win32 uses BGR (COLORREF is 0x00BBGGRR)
-    // Assuming style->color is stored as 0xRRGGBB
-    
     int r = (style->color >> 16) & 0xFF;
     int g = (style->color >> 8) & 0xFF;
     int b = style->color & 0xFF;
     SetTextColor(hdc, RGB(r, g, b));
+}
 
-    // Background is tricky because we draw boxes, not just set BKColor
+static void render_image(HDC hdc, layout_box_t *box, int x, int y, int w, int h) {
+    if (!box->node->image_data || box->node->image_size == 0) return;
+
+    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, box->node->image_size);
+    if (!hGlobal) return;
+
+    void *ptr = GlobalLock(hGlobal);
+    memcpy(ptr, box->node->image_data, box->node->image_size);
+    GlobalUnlock(hGlobal);
+
+    IStream *pStream = NULL;
+    if (CreateStreamOnHGlobal(hGlobal, TRUE, &pStream) == S_OK) {
+        IPicture *pPicture = NULL;
+        if (OleLoadPicture(pStream, box->node->image_size, FALSE, &IID_IPicture, (void**)&pPicture) == S_OK) {
+            long hmWidth, hmHeight;
+            pPicture->lpVtbl->get_Width(pPicture, &hmWidth);
+            pPicture->lpVtbl->get_Height(pPicture, &hmHeight);
+
+            pPicture->lpVtbl->Render(pPicture, hdc, x, y, w, h, 0, hmHeight, hmWidth, -hmHeight, NULL);
+            pPicture->lpVtbl->Release(pPicture);
+        }
+        pStream->lpVtbl->Release(pStream);
+    }
 }
 
 void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
@@ -23,20 +43,22 @@ void render_tree(HDC hdc, layout_box_t *box, int offset_x, int offset_y) {
     int w = box->dimensions.width;
     int h = box->dimensions.height;
 
-    // Draw background if not transparent/white default (optimization)
-    // For now, just draw a border for debugging if it's a block
     if (box->node->type == DOM_NODE_ELEMENT) {
-        // Simple visual debug: Draw border for all blocks to see layout
-        HBRUSH hBrush = GetStockObject(NULL_BRUSH);
-        HBRUSH oldBrush = SelectObject(hdc, hBrush);
-        HPEN hPen = CreatePen(PS_SOLID, 1, RGB(200, 200, 200));
-        HPEN oldPen = SelectObject(hdc, hPen);
-        
-        Rectangle(hdc, x, y, x + w, y + h);
-        
-        SelectObject(hdc, oldPen);
-        SelectObject(hdc, oldBrush);
-        DeleteObject(hPen);
+        if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
+            render_image(hdc, box, x, y, w, h);
+        } else {
+             // Simple visual debug: Draw border for all blocks to see layout
+            HBRUSH hBrush = GetStockObject(NULL_BRUSH);
+            HBRUSH oldBrush = SelectObject(hdc, hBrush);
+            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(220, 220, 220));
+            HPEN oldPen = SelectObject(hdc, hPen);
+            
+            Rectangle(hdc, x, y, x + w, y + h);
+            
+            SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(hPen);
+        }
     } else if (box->node->type == DOM_NODE_TEXT && box->node->content) {
         set_color_from_style(hdc, box->node->style);
         SetBkMode(hdc, TRANSPARENT);

@@ -69,6 +69,10 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     return TRUE;
 }
 
+#include "network/loader.h"
+
+// ...
+
 static void Navigate(HWND hwnd, const char *url) {
     network_response_t *res = http_fetch(url);
     if (res && res->data) {
@@ -84,6 +88,7 @@ static void Navigate(HWND hwnd, const char *url) {
 
         g_current_dom = html_parse(res->data);
         if (g_current_dom) {
+            loader_fetch_resources(g_current_dom, url);
             style_compute(g_current_dom);
             
             HWND hContent = GetDlgItem(hwnd, ID_CONTENT);

@@ -30,6 +30,7 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
     int current_y = box->dimensions.y;
     int current_x = box->dimensions.x;
     int max_h = 0;
+    int line_height = 0; // Track max height in current line (for inline)
 
     // Count cells if it's a table row
     int cell_count = 0;
@@ -48,12 +49,51 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
             layout_calculate_positions(child, current_x, box->dimensions.y, cell_width);
             current_x += cell_width;
             if (child->dimensions.height > max_h) max_h = child->dimensions.height;
-        } else {
-            layout_calculate_positions(child, box->dimensions.x, current_y, box->dimensions.width);
+        } 
+        else if (child->node->style->display == DISPLAY_INLINE || child->node->type == DOM_NODE_TEXT) {
+             // Basic inline flow
+             // Measure width (very rough approximation for text)
+             int desired_w = child->dimensions.width;
+             if (child->node->type == DOM_NODE_TEXT && child->node->content) {
+                 desired_w = strlen(child->node->content) * 8; // approx char width
+             }
+             if (child->node->type == DOM_NODE_ELEMENT && child->node->tag_name && strcasecmp(child->node->tag_name, "img") == 0) {
+                 desired_w = 100; // placeholder width for images
+             }
+
+             if (current_x + desired_w > box->dimensions.x + box->dimensions.width) {
+                 // Wrap
+                 current_x = box->dimensions.x;
+                 current_y += line_height;
+                 line_height = 0;
+             }
+             
+             child->dimensions.x = current_x;
+             child->dimensions.y = current_y;
+             child->dimensions.width = desired_w;
+             
+             // Recurse (inline-block logic would be here, but simpler for now)
+             layout_calculate_positions(child, current_x, current_y, desired_w); // Recurse to find height
+             
+             if (child->dimensions.height > line_height) line_height = child->dimensions.height;
+             current_x += child->dimensions.width;
+        }
+        else {
+            // Block element: clear previous line
+            if (line_height > 0) {
+                current_y += line_height;
+                line_height = 0;
+            }
+            current_x = box->dimensions.x; // Reset X
+            
+            layout_calculate_positions(child, current_x, current_y, box->dimensions.width);
             current_y += child->dimensions.height + child->node->style->margin_top + child->node->style->margin_bottom;
         }
         child = child->next_sibling;
     }
+
+    // Flush last line
+    if (line_height > 0) current_y += line_height;
 
     if (box->node->style->display == DISPLAY_TABLE_ROW) {
         box->dimensions.height = max_h;
@@ -61,8 +101,11 @@ void layout_calculate_positions(layout_box_t *box, int x, int y, int width) {
         box->dimensions.height = box->node->style->height;
     } else {
         box->dimensions.height = current_y - box->dimensions.y;
-        if (box->dimensions.height < 20 && box->node->type == DOM_NODE_TEXT) {
-             box->dimensions.height = 20; // Default height for text
+        if (box->dimensions.height < 20) {
+             box->dimensions.height = 20; // Min height
+             if (box->node->type == DOM_NODE_ELEMENT && box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
+                 box->dimensions.height = 100; // placeholder height
+             }
         }
     }
 }
