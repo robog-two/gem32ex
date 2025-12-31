@@ -6,6 +6,8 @@ node_t* node_create(node_type_t type) {
     node_t *node = calloc(1, sizeof(node_t));
     if (node) {
         node->type = type;
+        node->style = calloc(1, sizeof(style_t));
+        style_init_default(node->style);
     }
     return node;
 }
@@ -22,6 +24,7 @@ void node_free(node_t *node) {
 
     if (node->tag_name) free(node->tag_name);
     if (node->content) free(node->content);
+    if (node->style) free(node->style);
 
     attr_t *attr = node->attributes;
     while (attr) {

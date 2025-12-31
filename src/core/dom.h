@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+#include "style.h"
+
 typedef enum {
     NODE_ELEMENT,
     NODE_TEXT
@@ -19,6 +21,7 @@ typedef struct node_s {
     char *tag_name;
     char *content; // For text nodes
     attr_t *attributes;
+    style_t *style;
     struct node_s *first_child;
     struct node_s *last_child;
     struct node_s *next_sibling;

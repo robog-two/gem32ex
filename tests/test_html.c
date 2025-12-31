@@ -1,36 +1,31 @@
 #include <stdio.h>
 #include <core/html.h>
+#include <core/layout.h>
 
-void print_tree(node_t *node, int depth) {
+void print_layout(layout_box_t *box, int depth) {
     for (int i = 0; i < depth; i++) printf("  ");
-    if (node->type == NODE_ELEMENT) {
-        printf("<%s>\n", node->tag_name);
-        attr_t *attr = node->attributes;
-        while (attr) {
-            for (int i = 0; i < depth + 1; i++) printf("  ");
-            printf("@%s=%s\n", attr->name, attr->value ? attr->value : "NULL");
-            attr = attr->next;
-        }
-    } else {
-        printf("TEXT: %s\n", node->content);
-    }
+    printf("<%s> @ (%d, %d) size %dx%d\n", 
+           box->node->tag_name ? box->node->tag_name : "TEXT",
+           box->dimensions.x, box->dimensions.y,
+           box->dimensions.width, box->dimensions.height);
 
-    node_t *child = node->first_child;
+    layout_box_t *child = box->first_child;
     while (child) {
-        print_tree(child, depth + 1);
+        print_layout(child, depth + 1);
         child = child->next_sibling;
     }
 }
 
 int main() {
-    const char *html = "<html><head><title>Test</title></head><body><h1>Hello</h1><p class=\"main\">World<img src=\"img.png\"/></p></body></html>";
-    node_t *root = html_parse(html);
-    if (root) {
-        print_tree(root, 0);
-        node_free(root);
-    } else {
-        printf("Failed to parse HTML\n");
-        return 1;
+    const char *html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
+    node_t *dom = html_parse(html);
+    if (dom) {
+        layout_box_t *layout = layout_create_tree(dom, 800);
+        if (layout) {
+            print_layout(layout, 0);
+            layout_free(layout);
+        }
+        node_free(dom);
     }
     return 0;
 }
