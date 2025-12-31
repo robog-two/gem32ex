@@ -2,23 +2,26 @@
 #include <windows.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <io.h>
+#include <fcntl.h>
 
 static int g_has_console = 0;
 
 void log_init(void) {
-    // Attempt to attach to parent console (if any)
+    // Try to attach to the parent's console
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        // Redirect standard streams to the attached console
-        if (freopen("CONOUT$", "w", stdout)) {
-            g_has_console = 1;
-        }
+        g_has_console = 1;
+    } else if (GetLastError() == ERROR_ACCESS_DENIED) {
+        // Already attached to a console
+        g_has_console = 1;
+    }
+
+    if (g_has_console) {
+        // Redirect CRT standard streams to the console
+        freopen("CONOUT$", "w", stdout);
         freopen("CONOUT$", "w", stderr);
-    } else {
-        // Check if we already have a console (e.g. launched from cmd.exe)
-        DWORD mode;
-        if (GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &mode)) {
-            g_has_console = 1;
-        }
+        setvbuf(stdout, NULL, _IONBF, 0);
+        setvbuf(stderr, NULL, _IONBF, 0);
     }
 }
 
@@ -39,15 +42,15 @@ void log_msg(log_level_t level, const char* format, ...) {
     va_end(args);
 
     if (len > 0) {
-        // Output to console if we have one
-        if (g_has_console) {
-            printf("[%s] %s\n", level_str, buffer);
-            fflush(stdout);
-        }
-        
-        // Always output to debug stream (visible in DebugView or debugger)
+        // Always output to debug stream
         char debug_buffer[1100];
         _snprintf(debug_buffer, sizeof(debug_buffer), "[%s] %s\n", level_str, buffer);
         OutputDebugString(debug_buffer);
+
+        // Output to console if we have one
+        if (g_has_console) {
+            fprintf(stdout, "[%s] %s\n", level_str, buffer);
+            fflush(stdout);
+        }
     }
 }
