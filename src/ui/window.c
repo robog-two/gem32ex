@@ -170,7 +170,7 @@ static void LoaderProgressCallback(int current, int total, void *ctx) {
 
 static void FetchFavicon(history_node_t *node) {
     if (!node || !node->url) return;
-    
+
     URL_COMPONENTS urlComp = {0};
     urlComp.dwStructSize = sizeof(urlComp);
     char host[256] = {0};
@@ -182,16 +182,28 @@ static void FetchFavicon(history_node_t *node) {
 
     if (strncmp(node->url, "gemini://", 9) == 0) return;
 
-    char favicon_url[2048];
-    snprintf(favicon_url, sizeof(favicon_url), "%s://%s/favicon.ico", 
-             (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? "https" : "http", host);
+    const char *scheme = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? "https" : "http";
 
-    network_response_t *res = network_fetch(favicon_url);
-    if (res && res->data && res->size > 0) {
-        history_node_set_favicon(node, res->data, res->size);
-        res->data = NULL;
+    // Try multiple favicon formats
+    const char *favicon_paths[] = {
+        "/favicon.ico",     // Classic ICO format (widely supported)
+        "/favicon.png",     // Modern PNG format
+        NULL
+    };
+
+    for (int i = 0; favicon_paths[i]; i++) {
+        char favicon_url[2048];
+        snprintf(favicon_url, sizeof(favicon_url), "%s://%s%s", scheme, host, favicon_paths[i]);
+
+        network_response_t *res = network_fetch(favicon_url);
+        if (res && res->data && res->size > 0 && res->status_code == 200) {
+            history_node_set_favicon(node, res->data, res->size);
+            res->data = NULL;
+            if (res) network_response_free(res);
+            return;  // Success - stop trying other formats
+        }
+        if (res) network_response_free(res);
     }
-    if (res) network_response_free(res);
 }
 
 static void DrawHistoryTree(HDC hdc, history_node_t *node, int *x, int y) {
