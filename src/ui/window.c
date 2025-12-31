@@ -34,7 +34,7 @@ static char g_current_url[2048] = {0};
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_history = history_create();
-    
+
     // Register Main Window Class
     const char className[] = "Gem32BrowserClass";
     WNDCLASS wc = {0};
@@ -57,7 +57,7 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     wcc.lpszClassName = contentClassName;
     wcc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wcc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // White background
-    
+
     if (!RegisterClass(&wcc)) {
         LOG_ERROR("Failed to register content window class");
         return FALSE;
@@ -108,7 +108,7 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     }
 
     strncpy(g_current_url, url, sizeof(g_current_url)-1);
-    
+
     // Update Address Bar (ID_EDIT_URL is in the parent window)
     HWND hMain = GetParent(hContent);
     SetWindowText(GetDlgItem(hMain, ID_EDIT_URL), g_current_url);
@@ -117,13 +117,13 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
     if (g_current_dom) {
         loader_fetch_resources(g_current_dom, url);
         style_compute(g_current_dom);
-        
+
         RECT rect;
         GetClientRect(hContent, &rect);
         g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
-        
+
         history_add(g_history, url, "Title Placeholder");
-        
+
         // Trigger repaint
         InvalidateRect(hContent, NULL, TRUE);
     }
@@ -143,13 +143,13 @@ static void Navigate(HWND hwnd, const char *url) {
 
 static void HandleClick(HWND hContent, int x, int y) {
     if (!g_current_layout) return;
-    
+
     layout_box_t *hit = layout_hit_test(g_current_layout, x, y);
     if (!hit || !hit->node) {
         g_focused_node = NULL;
         return;
     }
-    
+
     node_t *node = hit->node;
     // Find nearest element if we hit a text node
     while (node && node->type == DOM_NODE_TEXT) {
@@ -162,7 +162,7 @@ static void HandleClick(HWND hContent, int x, int y) {
         if (strcasecmp(node->tag_name, "textarea") == 0) is_editable = 1;
         else if (strcasecmp(node->tag_name, "input") == 0) {
             const char *type = node_get_attr(node, "type");
-            if (!type || (strcasecmp(type, "text") == 0 || strcasecmp(type, "password") == 0 || 
+            if (!type || (strcasecmp(type, "text") == 0 || strcasecmp(type, "password") == 0 ||
                           strcasecmp(type, "email") == 0 || strcasecmp(type, "search") == 0 ||
                           strcasecmp(type, "tel") == 0 || strcasecmp(type, "url") == 0)) {
                 is_editable = 1;
@@ -224,7 +224,7 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
-            
+
             // Basic font setup
             HFONT hFont = GetStockObject(DEFAULT_GUI_FONT);
             SelectObject(hdc, hFont);
@@ -255,7 +255,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             );
 
             CreateWindow(
-                "EDIT", "http://google.com",
+                "EDIT", "http://frogfind.com",
                 WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL,
                 0, 0, 0, 0,
                 hwnd, (HMENU)ID_EDIT_URL,
@@ -272,8 +272,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
             // Use our custom class for content
             CreateWindow(
-                "Gem32ContentClass", NULL, 
-                WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL, 
+                "Gem32ContentClass", NULL,
+                WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL,
                 0, 0, 0, 0,
                 hwnd, (HMENU)ID_CONTENT,
                 ((LPCREATESTRUCT)lParam)->hInstance, NULL
@@ -323,8 +323,8 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
     int topBarY = 0;
     int btnSize = TOP_BAR_HEIGHT;
     int urlX = btnSize;
-    int urlWidth = width - (btnSize * 2); 
-    
+    int urlWidth = width - (btnSize * 2);
+
     HWND hStar = GetDlgItem(hwnd, ID_BTN_STAR);
     HWND hUrl = GetDlgItem(hwnd, ID_EDIT_URL);
     HWND hGo = GetDlgItem(hwnd, ID_BTN_GO);
