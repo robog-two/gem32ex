@@ -8,6 +8,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Missing in older XP headers
+#ifndef SP_PROT_TLS1_1_CLIENT
+#define SP_PROT_TLS1_1_CLIENT 0x00000200
+#endif
+#ifndef SP_PROT_TLS1_2_CLIENT
+#define SP_PROT_TLS1_2_CLIENT 0x00000800
+#endif
+#ifndef ISC_REQ_STREAM
+#define ISC_REQ_STREAM 0x00008000
+#endif
+#ifndef ISC_RET_STREAM
+#define ISC_RET_STREAM 0x00008000
+#endif
+
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "secur32.lib")
 
@@ -31,7 +45,6 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
     SecBuffer outBuffer[1], inBuffer[2];
     DWORD dwSSPIFlags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | ISC_RET_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
     SECURITY_STATUS scRet;
-    DWORD cbData;
 
     outBufferDesc.ulVersion = SECBUFFER_VERSION;
     outBufferDesc.cBuffers = 1;
@@ -40,7 +53,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
     outBuffer[0].BufferType = SECBUFFER_TOKEN;
     outBuffer[0].cbBuffer = 0;
 
-    scRet = InitializeSecurityContext(phCreds, NULL, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, NULL, 0, phContext, &outBufferDesc, &dwSSPIFlags, NULL);
+    scRet = InitializeSecurityContextA(phCreds, NULL, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, NULL, 0, phContext, &outBufferDesc, &dwSSPIFlags, NULL);
     if (scRet != SEC_I_CONTINUE_NEEDED) return scRet;
 
     if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
@@ -70,7 +83,7 @@ static SECURITY_STATUS PerformHandshake(SOCKET s, PCredHandle phCreds, const cha
         outBuffer[0].pvBuffer = NULL;
         outBuffer[0].cbBuffer = 0;
 
-        scRet = InitializeSecurityContext(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
+        scRet = InitializeSecurityContextA(phCreds, phContext, (SEC_CHAR*)szHostName, dwSSPIFlags, 0, SECURITY_NATIVE_DREP, &inBufferDesc, 0, NULL, &outBufferDesc, &dwSSPIFlags, NULL);
 
         if (scRet == SEC_E_OK || scRet == SEC_I_CONTINUE_NEEDED) {
             if (outBuffer[0].cbBuffer > 0 && outBuffer[0].pvBuffer) {
@@ -152,7 +165,7 @@ network_response_t* gemini_fetch(const char *url) {
     schannelCred.dwVersion = SCHANNEL_CRED_VERSION;
     schannelCred.grbitEnabledProtocols = SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT | SP_PROT_TLS1_2_CLIENT;
 
-    if (AcquireCredentialsHandle(NULL, UNISP_NAME, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &hCreds, NULL) != SEC_E_OK) { closesocket(s); WSACleanup(); return NULL; }
+    if (AcquireCredentialsHandleA(NULL, UNISP_NAME_A, SECPKG_CRED_OUTBOUND, NULL, &schannelCred, NULL, NULL, &hCreds, NULL) != SEC_E_OK) { closesocket(s); WSACleanup(); return NULL; }
 
     SecBuffer extraData = {0};
     if (PerformHandshake(s, &hCreds, host, &hContext, &extraData) != SEC_E_OK) {
@@ -167,7 +180,7 @@ network_response_t* gemini_fetch(const char *url) {
     snprintf(request, sizeof(request), "gemini://%s%s\r\n", host, path);
 
     SecPkgContext_StreamSizes sizes;
-    QueryContextAttributes(&hContext, SECPKG_ATTR_STREAM_SIZES, &sizes);
+    QueryContextAttributesA(&hContext, SECPKG_ATTR_STREAM_SIZES, &sizes);
 
     DWORD cbMsg = strlen(request);
     DWORD cbBuffer = sizes.cbHeader + cbMsg + sizes.cbTrailer;
