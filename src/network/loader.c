@@ -2,6 +2,7 @@
 #include "http.h"
 #include "core/html.h"
 #include "core/log.h"
+#include "core/cache.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -48,15 +49,27 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                 snprintf(full_url, 1023, "%s/%s", base_url, node->style->bg_image);
             }
 
-            network_response_t *res = network_fetch(full_url);
-            if (res) {
-                LOG_DEBUG("Loaded background: %s (%lu bytes)", full_url, (unsigned long)res->size);
-                node->bg_image_data = res->data;
-                node->bg_image_size = res->size;
-                res->data = NULL; // Take ownership
-                network_response_free(res);
+            // Try cache first
+            size_t cached_size = 0;
+            void *cached_data = cache_get_image(full_url, &cached_size);
+            if (cached_data) {
+                LOG_DEBUG("Loaded background from cache: %s (%zu bytes)", full_url, cached_size);
+                node->bg_image_data = cached_data;
+                node->bg_image_size = cached_size;
             } else {
-                LOG_WARN("Failed to load background: %s", full_url);
+                // Fetch from network
+                network_response_t *res = network_fetch(full_url);
+                if (res) {
+                    LOG_DEBUG("Loaded background from network: %s (%lu bytes)", full_url, (unsigned long)res->size);
+                    node->bg_image_data = res->data;
+                    node->bg_image_size = res->size;
+                    // Cache for later
+                    cache_put_image(full_url, res->data, res->size);
+                    res->data = NULL; // Take ownership
+                    network_response_free(res);
+                } else {
+                    LOG_WARN("Failed to load background: %s", full_url);
+                }
             }
             if (cb) {
                 (*current_count)++;
@@ -74,15 +87,27 @@ void loader_fetch_resources(node_t *node, const char *base_url, loader_progress_
                     snprintf(full_url, 1023, "%s/%s", base_url, src);
                 }
 
-                network_response_t *res = network_fetch(full_url);
-                if (res) {
-                    LOG_DEBUG("Loaded image: %s (%lu bytes)", full_url, (unsigned long)res->size);
-                    node->image_data = res->data;
-                    node->image_size = res->size;
-                    res->data = NULL; // Take ownership
-                    network_response_free(res);
+                // Try cache first
+                size_t cached_size = 0;
+                void *cached_data = cache_get_image(full_url, &cached_size);
+                if (cached_data) {
+                    LOG_DEBUG("Loaded image from cache: %s (%zu bytes)", full_url, cached_size);
+                    node->image_data = cached_data;
+                    node->image_size = cached_size;
                 } else {
-                    LOG_WARN("Failed to load image: %s", full_url);
+                    // Fetch from network
+                    network_response_t *res = network_fetch(full_url);
+                    if (res) {
+                        LOG_DEBUG("Loaded image from network: %s (%lu bytes)", full_url, (unsigned long)res->size);
+                        node->image_data = res->data;
+                        node->image_size = res->size;
+                        // Cache for later
+                        cache_put_image(full_url, res->data, res->size);
+                        res->data = NULL; // Take ownership
+                        network_response_free(res);
+                    } else {
+                        LOG_WARN("Failed to load image: %s", full_url);
+                    }
                 }
                 if (cb) {
                     (*current_count)++;

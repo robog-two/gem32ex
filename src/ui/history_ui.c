@@ -3,6 +3,7 @@
 #include <string.h>
 #include <wininet.h>
 #include "core/log.h"
+#include "core/cache.h"
 #include "network/protocol.h"
 #include "render.h"
 
@@ -90,8 +91,19 @@ void history_ui_fetch_favicon(history_node_t *node) {
             char favicon_url[2048];
             snprintf(favicon_url, sizeof(favicon_url), "%s://%s%s", scheme, hosts_to_try[h], favicon_paths[i]);
 
+            // Try cache first
+            size_t cached_size = 0;
+            void *cached_data = cache_get_image(favicon_url, &cached_size);
+            if (cached_data && cached_size > 0) {
+                history_node_set_favicon(node, cached_data, cached_size);
+                return;  // Success - stop trying other hosts/formats
+            }
+
+            // Fetch from network
             network_response_t *res = network_fetch(favicon_url);
             if (res && res->data && res->size > 0 && res->status_code == 200) {
+                // Cache for later
+                cache_put_image(favicon_url, res->data, res->size);
                 history_node_set_favicon(node, res->data, res->size);
                 res->data = NULL;
                 if (res) network_response_free(res);
