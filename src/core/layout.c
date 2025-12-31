@@ -209,13 +209,17 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
     box->last_space = space;
     int bw = style->border_width;
     int pl = style->padding_left, pr = style->padding_right, pt = style->padding_top, pb = style->padding_bottom;
-    
+    int ml = style->margin_left, mr = style->margin_right;
+
     // Resolve Width
     if (style->width > 0) {
         box->fragment.border_box.width = style->width + (bw * 2) + pl + pr;
     } else if (style->display == DISPLAY_BLOCK || style->display == DISPLAY_TABLE ||
                style->display == DISPLAY_TABLE_ROW || style->display == DISPLAY_TABLE_CELL) {
-        box->fragment.border_box.width = space.available_width;
+        // For block elements, border box width = available width minus horizontal margins
+        // (margins are outside the border box)
+        box->fragment.border_box.width = space.available_width - ml - mr;
+        if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (box->node->tag_name && strcasecmp(box->node->tag_name, "img") == 0) {
         box->fragment.border_box.width = 100; // Default image width
     } else {
@@ -267,12 +271,9 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
                 child_y += collapse;
                 is_first_child = 0;
             }
-            // Calculate available width for child, subtracting horizontal margins
-            int child_available_width = box->fragment.content_box.width;
-            if (is_block(child->node)) {
-                child_available_width -= (child->node->style->margin_left + child->node->style->margin_right);
-            }
-            constraint_space_t child_space = {child_available_width, 0, 1, 0};
+            // Pass parent's content box width as available width to child
+            // Child will subtract its own margins from this
+            constraint_space_t child_space = {box->fragment.content_box.width, 0, 1, 0};
 
             // Set child position relative to THIS box
             // child->x = content_left + margin_left
