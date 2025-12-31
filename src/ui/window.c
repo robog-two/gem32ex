@@ -32,6 +32,37 @@ static node_t *g_current_dom = NULL;
 node_t *g_focused_node = NULL;
 static char g_current_url[2048] = {0};
 
+// Scrollbar State
+static int g_scroll_x = 0;
+static int g_scroll_y = 0;
+static int g_content_width = 0;
+static int g_content_height = 0;
+
+static void UpdateScrollBars(HWND hwnd) {
+    RECT rc;
+    GetClientRect(hwnd, &rc);
+    int client_w = rc.right - rc.left;
+    int client_h = rc.bottom - rc.top;
+
+    SCROLLINFO si;
+    si.cbSize = sizeof(SCROLLINFO);
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+
+    // Vertical
+    si.nMin = 0;
+    si.nMax = g_content_height;
+    si.nPage = client_h;
+    si.nPos = g_scroll_y;
+    SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+
+    // Horizontal
+    si.nMin = 0;
+    si.nMax = g_content_width;
+    si.nPage = client_w;
+    si.nPos = g_scroll_x;
+    SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
+}
+
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_history = history_create();
 
@@ -87,8 +118,6 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
 
 #include "network/loader.h"
 
-// ...
-
 static void ProcessNewContent(HWND hContent, network_response_t *res, const char *url) {
     if (!res || !res->data) {
         LOG_WARN("ProcessNewContent called with null resource or data");
@@ -120,7 +149,17 @@ static void ProcessNewContent(HWND hContent, network_response_t *res, const char
 
         RECT rect;
         GetClientRect(hContent, &rect);
+        // Pass width - vertical scrollbar width? For now full client width.
+        // Usually we want to reserve space if scrollbar is visible, but simplified:
         g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
+
+        // Update content size
+        g_content_width = g_current_layout->fragment.border_box.width;
+        g_content_height = g_current_layout->fragment.border_box.height;
+        g_scroll_x = 0;
+        g_scroll_y = 0;
+
+        UpdateScrollBars(hContent);
 
         history_add(g_history, url, "Title Placeholder");
 
@@ -144,7 +183,8 @@ static void Navigate(HWND hwnd, const char *url) {
 static void HandleClick(HWND hContent, int x, int y) {
     if (!g_current_layout) return;
 
-    layout_box_t *hit = layout_hit_test(g_current_layout, x, y);
+    // Adjust for scroll
+    layout_box_t *hit = layout_hit_test(g_current_layout, x + g_scroll_x, y + g_scroll_y);
     if (!hit || !hit->node) {
         g_focused_node = NULL;
         return;
@@ -201,6 +241,81 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_LBUTTONDOWN:
             HandleClick(hwnd, LOWORD(lParam), HIWORD(lParam));
             break;
+        case WM_SIZE:
+            UpdateScrollBars(hwnd);
+            return 0;
+        case WM_VSCROLL: {
+            int action = LOWORD(wParam);
+            int newPos = g_scroll_y;
+            SCROLLINFO si = { sizeof(SCROLLINFO), SIF_ALL, 0, 0, 0, 0, 0 };
+            GetScrollInfo(hwnd, SB_VERT, &si);
+            int page = si.nPage;
+            
+            switch (action) {
+                case SB_LINEUP: newPos -= 20; break;
+                case SB_LINEDOWN: newPos += 20; break;
+                case SB_PAGEUP: newPos -= page; break;
+                case SB_PAGEDOWN: newPos += page; break;
+                case SB_THUMBTRACK: newPos = HIWORD(wParam); break;
+            }
+            if (newPos < 0) newPos = 0;
+            if (newPos > g_content_height - (int)page) newPos = g_content_height - (int)page;
+            if (newPos < 0) newPos = 0; // If content < page
+
+            if (newPos != g_scroll_y) {
+                // ScrollWindowEx could be used for performance, but full repaint is simpler for now
+                g_scroll_y = newPos;
+                SetScrollPos(hwnd, SB_VERT, g_scroll_y, TRUE);
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+            return 0;
+        }
+        case WM_HSCROLL: {
+            int action = LOWORD(wParam);
+            int newPos = g_scroll_x;
+            SCROLLINFO si = { sizeof(SCROLLINFO), SIF_ALL, 0, 0, 0, 0, 0 };
+            GetScrollInfo(hwnd, SB_HORZ, &si);
+            int page = si.nPage;
+            
+            switch (action) {
+                case SB_LINEUP: newPos -= 20; break; // Left
+                case SB_LINEDOWN: newPos += 20; break; // Right
+                case SB_PAGEUP: newPos -= page; break;
+                case SB_PAGEDOWN: newPos += page; break;
+                case SB_THUMBTRACK: newPos = HIWORD(wParam); break;
+            }
+            if (newPos < 0) newPos = 0;
+            if (newPos > g_content_width - (int)page) newPos = g_content_width - (int)page;
+            if (newPos < 0) newPos = 0;
+
+            if (newPos != g_scroll_x) {
+                g_scroll_x = newPos;
+                SetScrollPos(hwnd, SB_HORZ, g_scroll_x, TRUE);
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+            return 0;
+        }
+        case WM_MOUSEWHEEL: {
+            int delta = (short)HIWORD(wParam);
+            // delta 120 = 1 tick. 
+            // scroll 3 lines per tick. ~60px.
+            int scrollAmt = -(delta / 120) * 60;
+            SendMessage(hwnd, WM_VSCROLL, scrollAmt > 0 ? SB_LINEDOWN : SB_LINEUP, 0); 
+            // Better: calculate directly
+            int newPos = g_scroll_y + scrollAmt;
+            RECT rc; GetClientRect(hwnd, &rc);
+            int max = g_content_height - (rc.bottom - rc.top);
+            if (newPos < 0) newPos = 0;
+            if (newPos > max) newPos = max;
+            if (newPos < 0) newPos = 0;
+            
+            if (newPos != g_scroll_y) {
+                g_scroll_y = newPos;
+                SetScrollPos(hwnd, SB_VERT, g_scroll_y, TRUE);
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+            return 0;
+        }
         case WM_CHAR:
             if (g_focused_node) {
                 char c = (char)wParam;
@@ -230,7 +345,7 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             SelectObject(hdc, hFont);
 
             if (g_current_layout) {
-                render_tree(hdc, g_current_layout, 0, 0);
+                render_tree(hdc, g_current_layout, -g_scroll_x, -g_scroll_y);
             } else {
                 TextOut(hdc, 10, 10, "No content loaded.", 18);
             }
