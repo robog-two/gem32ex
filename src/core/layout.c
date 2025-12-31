@@ -267,8 +267,19 @@ void layout_compute(layout_box_t *box, constraint_space_t space) {
         box->fragment.border_box.width = space.available_width - ml - mr;
         if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
     } else if (style->display == DISPLAY_INLINE) {
-        box->fragment.border_box.width = space.available_width - ml - mr;
-        if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
+        // Replaced elements (img, iframe) use intrinsic width if available
+        if (box->node->tag_name && (strcasecmp(box->node->tag_name, "img") == 0 || strcasecmp(box->node->tag_name, "iframe") == 0)) {
+            if (box->node->image_width > 0) {
+                box->fragment.border_box.width = box->node->image_width + (bw * 2) + pl + pr;
+            } else {
+                // No intrinsic width, use available space
+                box->fragment.border_box.width = space.available_width - ml - mr;
+                if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
+            }
+        } else {
+            box->fragment.border_box.width = space.available_width - ml - mr;
+            if (box->fragment.border_box.width < 0) box->fragment.border_box.width = 0;
+        }
     } else {
         box->fragment.border_box.width = 0;
     }

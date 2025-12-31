@@ -293,12 +293,9 @@ void render_image_data(HDC hdc, void *data, size_t size, int x, int y, int w, in
         return;
     }
 
-    // Check for zero dimensions - would result in invisible image
-    if (w <= 0 || h <= 0) {
-        LOG_WARN("Image has zero dimensions: w=%d, h=%d (image will be invisible at position %d,%d)", w, h, x, y);
-        LOG_WARN("Image data: %p, size: %lu bytes", data, (unsigned long)size);
-        return;
-    }
+    // Use reasonable defaults for zero dimensions
+    if (w <= 0) w = 100;
+    if (h <= 0) h = 100;
 
     int is_png_file = is_png(data, size);
 
