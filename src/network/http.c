@@ -226,20 +226,26 @@ static network_response_t* perform_http_request(const char *url, const char *met
     char path[2048] = {0};
     char extra[1024] = {0};
     urlComp.lpszHostName = host;
-    urlComp.dwHostNameLength = sizeof(host);
+    urlComp.dwHostNameLength = sizeof(host) - 1;  // -1 to leave room for null terminator
     urlComp.lpszUrlPath = path;
-    urlComp.dwUrlPathLength = sizeof(path);
+    urlComp.dwUrlPathLength = sizeof(path) - 1;
     urlComp.lpszExtraInfo = extra;
-    urlComp.dwExtraInfoLength = sizeof(extra);
-    urlComp.dwSchemeLength = 1;
+    urlComp.dwExtraInfoLength = sizeof(extra) - 1;
+    urlComp.dwSchemeLength = -1;  // Let it calculate scheme length
 
     if (!InternetCrackUrl(url, 0, 0, &urlComp)) {
         log_last_error("InternetCrackUrl");
         return NULL;
     }
 
+    // Ensure null termination
+    host[urlComp.dwHostNameLength] = '\0';
+    path[urlComp.dwUrlPathLength] = '\0';
+    extra[urlComp.dwExtraInfoLength] = '\0';
+
     char full_path[3072];
     strncpy(full_path, path, sizeof(full_path)-1);
+    full_path[sizeof(full_path)-1] = '\0';
     if (strlen(extra) > 0) strncat(full_path, extra, sizeof(full_path) - strlen(full_path) - 1);
     if (strlen(full_path) == 0) strcpy(full_path, "/");
 
