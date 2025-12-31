@@ -1,3 +1,31 @@
+/*
+ * Layout Engine Implementation - LayoutNG-inspired
+ *
+ * This module implements CSS layout using an architecture inspired by Chromium's LayoutNG.
+ * The key improvement over naive layout engines is the separation of inline layout into phases:
+ *
+ * INLINE LAYOUT ALGORITHM:
+ *
+ * 1. Pre-layout (layout_prepare_inline_item):
+ *    - Measure text nodes once and cache results (measured_width, measured_height, measured_baseline)
+ *    - This avoids repeated expensive platform_measure_text() calls
+ *
+ * 2. Line Breaking (layout_prepare_inline_item + line_box_t):
+ *    - Build up a line by adding items until we run out of space
+ *    - When an item doesn't fit, flush the current line and start a new one
+ *    - Track line metrics (max_ascent, max_descent) for baseline alignment
+ *
+ * 3. Line Box Construction (position_line_items):
+ *    - Position items horizontally: apply text-align (left/center/right)
+ *    - Position items vertically: align to a common baseline
+ *      * Text uses its measured baseline
+ *      * Replaced elements (img) align bottom edge to baseline
+ *      * Inline-blocks align bottom margin edge to baseline
+ *
+ * This approach aligns with modern browser behavior and scales better than measuring
+ * text on-demand during positioning.
+ */
+
 #include "layout.h"
 #include "platform.h"
 #include "log.h"
@@ -46,16 +74,23 @@ static int is_inline_container(const char *tag) {
 }
 
 #define MAX_LINE_FRAGMENTS 256
+
+// LayoutNG-inspired: Accumulates inline items for a single line
+// This represents the "line breaking" output before final positioning
 typedef struct {
     layout_box_t *items[MAX_LINE_FRAGMENTS];
     int count;
-    int width;
-    int height;
-    int max_ascent;
-    int max_descent;
-} line_info_t;
+    int width;           // Total width of items on this line
+    int max_ascent;      // Maximum ascent (baseline to top)
+    int max_descent;     // Maximum descent (baseline to bottom)
+} line_box_t;
 
-static void flush_line(line_info_t *line, int x_start, int *y_cursor, int available_width, text_align_t align) {
+/*
+ * LayoutNG-inspired: Phase 3 - Line Box Construction
+ * Takes a line_box_t filled with items and positions them horizontally and vertically.
+ * Handles text-align and baseline alignment.
+ */
+static void position_line_items(line_box_t *line, int x_start, int *y_cursor, int available_width, text_align_t align) {
     if (line->count == 0) return;
 
     int free_space = available_width - line->width;
@@ -70,32 +105,51 @@ static void flush_line(line_info_t *line, int x_start, int *y_cursor, int availa
 
     int current_x = x_start + start_offset;
 
+    // Position each item on the line
     for (int i = 0; i < line->count; i++) {
-        layout_box_t *child = line->items[i];
-        child->fragment.border_box.x = current_x;
+        layout_box_t *item = line->items[i];
+        item->fragment.border_box.x = current_x;
 
-        if (child->node->type == DOM_NODE_TEXT) {
-            child->fragment.border_box.y = baseline_y - child->fragment.baseline;
+        // Vertical alignment: align to the line's baseline
+        // Text items: position using their baseline
+        // Atomic items (img, etc.): align bottom to baseline (simplified)
+        if (item->node->type == DOM_NODE_TEXT) {
+            // Text baseline alignment
+            item->fragment.border_box.y = baseline_y - item->measured_baseline;
+        } else if (item->node->tag_name &&
+                   (strcasecmp(item->node->tag_name, "img") == 0 ||
+                    strcasecmp(item->node->tag_name, "iframe") == 0)) {
+            // Replaced elements: align bottom edge to baseline (common browser behavior)
+            item->fragment.border_box.y = baseline_y - item->fragment.border_box.height;
         } else {
-            child->fragment.border_box.y = baseline_y - child->fragment.border_box.height;
+            // Inline-block and others: align bottom to baseline
+            item->fragment.border_box.y = baseline_y - item->fragment.border_box.height;
         }
 
-        current_x += child->fragment.border_box.width;
+        current_x += item->fragment.border_box.width;
 
-        if (child->node->style->position == POSITION_RELATIVE) {
-            child->fragment.border_box.x += child->node->style->left;
-            child->fragment.border_box.y += child->node->style->top;
+        // Apply relative positioning offset
+        if (item->node->style->position == POSITION_RELATIVE) {
+            item->fragment.border_box.x += item->node->style->left;
+            item->fragment.border_box.y += item->node->style->top;
         }
     }
 
     *y_cursor += line_height;
+
+    // Reset line box for next line
     line->count = 0;
     line->width = 0;
     line->max_ascent = 0;
     line->max_descent = 0;
 }
 
-static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, int x_start, int *y_cursor, int available_width, text_align_t align, constraint_space_t space) {
+/*
+ * LayoutNG-inspired: Phase 1 & 2 - Pre-layout and Line Breaking
+ * Measures an inline item and adds it to the current line.
+ * If it doesn't fit, flushes the current line and starts a new one.
+ */
+static void layout_prepare_inline_item(layout_box_t *item, line_box_t *line, int x_start, int *y_cursor, int available_width, text_align_t align, constraint_space_t space) {
     if (!item || item->node->style->display == DISPLAY_NONE) return;
 
     if (item->node->style->position == POSITION_ABSOLUTE || item->node->style->position == POSITION_FIXED) {
@@ -108,24 +162,43 @@ static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, in
     }
 
     if (item->node->type == DOM_NODE_TEXT && item->node->content) {
-        int w, h, baseline;
-        platform_measure_text(item->node->content, item->node->style, -1, &w, &h, &baseline);
-
-        if (line->width + w > available_width && line->count > 0) {
-            flush_line(line, x_start, y_cursor, available_width, align);
+        // LayoutNG Phase 1: Pre-layout - Measure text once and cache the results
+        if (!item->is_measured) {
+            platform_measure_text(item->node->content, item->node->style, -1,
+                                &item->measured_width, &item->measured_height, &item->measured_baseline);
+            item->is_measured = 1;
         }
 
+        int w = item->measured_width;
+        int h = item->measured_height;
+        int baseline = item->measured_baseline;
+
+        // LayoutNG Phase 2: Line Breaking
+        // Modern browsers break at word boundaries (UAX#14). Simplified: break if won't fit
+        if (line->width + w > available_width && line->count > 0) {
+            // Flush current line and start new one
+            position_line_items(line, x_start, y_cursor, available_width, align);
+        }
+
+        // If text still doesn't fit on empty line, constrain to available width
+        // This enables word wrapping within the platform text measurement
         if (w > available_width) {
             platform_measure_text(item->node->content, item->node->style, available_width, &w, &h, &baseline);
+            // Update cache with constrained measurement
+            item->measured_width = w;
+            item->measured_height = h;
+            item->measured_baseline = baseline;
         }
 
         item->fragment.border_box.width = w;
         item->fragment.border_box.height = h;
         item->fragment.baseline = baseline;
 
+        // Add to current line box
         if (line->count < MAX_LINE_FRAGMENTS) {
             line->items[line->count++] = item;
             line->width += w;
+            // Track line metrics for proper baseline alignment
             if (baseline > line->max_ascent) line->max_ascent = baseline;
             if ((h - baseline) > line->max_descent) line->max_descent = h - baseline;
         }
@@ -136,43 +209,56 @@ static void layout_prepare_inline_item(layout_box_t *item, line_info_t *line, in
             child = child->next_sibling;
         }
     } else if (item->node->tag_name && (strcasecmp(item->node->tag_name, "img") == 0 || strcasecmp(item->node->tag_name, "iframe") == 0)) {
-        // Replaced elements (img, iframe) are intrinsic size - don't compute, just use their fixed dims
+        // Replaced elements (img, iframe) have intrinsic size - use their fixed dimensions
         int child_w = item->fragment.border_box.width;
         int child_h = item->fragment.border_box.height;
 
+        // Line breaking: check if replaced element fits on current line
         if (line->width + child_w > available_width && line->count > 0) {
-            flush_line(line, x_start, y_cursor, available_width, align);
+            position_line_items(line, x_start, y_cursor, available_width, align);
         }
 
+        // Add to line box
+        // Replaced elements align their bottom edge to the baseline (common browser behavior)
         if (line->count < MAX_LINE_FRAGMENTS) {
             line->items[line->count++] = item;
             line->width += child_w;
+            // Replaced element's full height contributes to line ascent
             if (child_h > line->max_ascent) line->max_ascent = child_h;
+            // No descent since they align bottom-to-baseline
         }
     } else {
-        // Atomic inline-block or other
+        // Atomic inline-block or other inline content
+        // These need full layout computation first
         layout_compute(item, space);
         int child_w = item->fragment.border_box.width;
         int child_h = item->fragment.border_box.height;
 
+        // Line breaking: check if atomic inline fits on current line
         if (line->width + child_w > available_width && line->count > 0) {
-            flush_line(line, x_start, y_cursor, available_width, align);
+            position_line_items(line, x_start, y_cursor, available_width, align);
         }
 
+        // Add to line box
+        // Atomic inlines (like inline-block) align their bottom margin edge to baseline
         if (line->count < MAX_LINE_FRAGMENTS) {
             line->items[line->count++] = item;
             line->width += child_w;
+            // Full height contributes to line ascent (simplified vertical-align)
             if (child_h > line->max_ascent) line->max_ascent = child_h;
         }
     }
 }
 
 /*
- * Layouts children in a horizontal flow (inline context).
- * Handles text measurement, line wrapping, and vertical alignment within lines.
+ * LayoutNG-inspired: Inline Formatting Context Layout
+ * Implements the full inline layout algorithm:
+ * - Phase 1: Pre-layout (measure items)
+ * - Phase 2: Line breaking (fit items into lines)
+ * - Phase 3: Line box construction (position items)
  */
 static void layout_inline_children(layout_box_t *box, constraint_space_t space, int *y_cursor) {
-    line_info_t line = {0};
+    line_box_t line = {0};
 
     int x_start = box->fragment.content_box.x;
     int available_width = box->fragment.content_box.width;
@@ -193,7 +279,8 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
         child = child->next_sibling;
     }
 
-    flush_line(&line, x_start, y_cursor, available_width, align);
+    // Flush any remaining items on the last line
+    position_line_items(&line, x_start, y_cursor, available_width, align);
 }
 
 
