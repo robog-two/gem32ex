@@ -3,17 +3,13 @@
 
 #include <winsock2.h>
 #include <windows.h>
-#define SECURITY_WIN32
-#include <security.h>
-#include <schnlsp.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 typedef struct {
     SOCKET socket;
-    CredHandle hCreds;
-    CtxtHandle hContext;
-    PSecurityFunctionTableA pSSPI;
-    char *extra_data;
-    int extra_data_len;
+    SSL_CTX *ctx;
+    SSL *ssl;
 } tls_connection_t;
 
 tls_connection_t* tls_connect(const char *host, int port);
