@@ -1,4 +1,6 @@
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "core/dom.h"
 #include "core/html.h"
 #include "core/style.h"
