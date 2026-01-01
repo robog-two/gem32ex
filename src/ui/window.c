@@ -27,6 +27,9 @@
 #define ID_STATUS_TEXT 1008
 #define ID_PROG_CTRL 1009
 
+// Standard Shell32 Animation IDs
+#define IDR_AVI_FILECOPY 160
+
 // Global state
 static layout_box_t *g_current_layout = NULL;
 static history_tree_t *g_history = NULL;
@@ -48,6 +51,7 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
 void Navigate(HWND hwnd, const char *url); // Forward declaration
+static void ProcessResponse(HWND hwnd, network_response_t *res, const char *url);
 
 BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_hInst = hInstance;
@@ -145,6 +149,44 @@ static void UpdateScrollBars(HWND hwnd) {
     SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
 }
 
+static void ShowLoading(HWND hParent) {
+    if (!g_hLoading) return;
+
+    RECT rcMain;
+    GetWindowRect(hParent, &rcMain);
+    int mainW = rcMain.right - rcMain.left;
+    int mainH = rcMain.bottom - rcMain.top;
+    int panelW = 300;
+    int panelH = 150;
+    int x = rcMain.left + (mainW - panelW) / 2;
+    int y = rcMain.top + (mainH - panelH) / 2;
+
+    SetWindowPos(g_hLoading, HWND_TOP, x, y, panelW, panelH, SWP_SHOWWINDOW);
+
+    HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
+    if (g_hShell32 && hAnim) {
+        if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
+            SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1));
+        }
+    }
+    UpdateWindow(g_hLoading);
+    UpdateWindow(hParent);
+    
+    // Pump messages
+    MSG msg;
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
+static void HideLoading() {
+    if (!g_hLoading) return;
+    HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
+    if (hAnim) SendMessage(hAnim, ACM_STOP, 0, 0);
+    ShowWindow(g_hLoading, SW_HIDE);
+}
+
 static void HandleClick(HWND hwnd, int x, int y) {
     int absoluteX = x + g_scroll_x;
     int absoluteY = y + g_scroll_y;
@@ -188,30 +230,7 @@ static void HandleClick(HWND hwnd, int x, int y) {
             char target_url[2048];
             
             // Show Loading
-            if (g_hLoading) {
-                RECT rcMain;
-                GetWindowRect(GetParent(hwnd), &rcMain);
-                int mainW = rcMain.right - rcMain.left;
-                int mainH = rcMain.bottom - rcMain.top;
-                int panelW = 300;
-                int panelH = 150;
-                int x = rcMain.left + (mainW - panelW) / 2;
-                int y = rcMain.top + (mainH - panelH) / 2;
-                SetWindowPos(g_hLoading, HWND_TOP, x, y, panelW, panelH, SWP_SHOWWINDOW);
-                
-                HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
-                if (g_hShell32 && hAnim) {
-                    if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
-                        SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1));
-                    }
-                }
-                UpdateWindow(g_hLoading);
-                MSG msg;
-                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-                    TranslateMessage(&msg);
-                    DispatchMessage(&msg);
-                }
-            }
+            ShowLoading(GetParent(hwnd));
 
             network_response_t *res = form_submit(node, base_url, target_url, sizeof(target_url));
             if (res) {
@@ -221,11 +240,7 @@ static void HandleClick(HWND hwnd, int x, int y) {
                 LOG_ERROR("Form submission failed");
             }
 
-            if (g_hLoading) {
-                HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
-                if (hAnim) SendMessage(hAnim, ACM_STOP, 0, 0);
-                ShowWindow(g_hLoading, SW_HIDE);
-            }
+            HideLoading();
         }
     }
 }
@@ -277,9 +292,6 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
             return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 }
-
-// Standard Shell32 Animation IDs
-#define IDR_AVI_FILECOPY 160
 
 static void ProcessResponse(HWND hwnd, network_response_t *res, const char *url) {
     if (!res || !res->data) {
@@ -349,37 +361,7 @@ void Navigate(HWND hwnd, const char *url) {
     if (hUrlEdit) SetWindowText(hUrlEdit, url);
 
     // Center and show loading popup
-    if (g_hLoading) {
-        RECT rcMain;
-        GetWindowRect(hwnd, &rcMain);
-        int mainW = rcMain.right - rcMain.left;
-        int mainH = rcMain.bottom - rcMain.top;
-        int panelW = 300;
-        int panelH = 150;
-        int x = rcMain.left + (mainW - panelW) / 2;
-        int y = rcMain.top + (mainH - panelH) / 2;
-        
-        SetWindowPos(g_hLoading, HWND_TOP, x, y, panelW, panelH, SWP_SHOWWINDOW);
-        
-        HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
-        
-        // Start Animation
-        if (g_hShell32 && hAnim) {
-            if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
-                SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1)); // Loop forever
-            }
-        }
-        
-        UpdateWindow(g_hLoading);
-        UpdateWindow(hwnd);
-        
-        // Pump any pending messages to start animation
-        MSG msg;
-        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
+    ShowLoading(hwnd);
 
     network_response_t *res = network_fetch(url);
     if (res && res->data) {
@@ -389,11 +371,7 @@ void Navigate(HWND hwnd, const char *url) {
         LOG_ERROR("Failed to fetch: %s", url);
     }
 
-    if (g_hLoading) {
-        HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
-        if (hAnim) SendMessage(hAnim, ACM_STOP, 0, 0);
-        ShowWindow(g_hLoading, SW_HIDE);
-    }
+    HideLoading();
 }
 
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
