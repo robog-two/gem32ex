@@ -2,6 +2,7 @@
 #define CSS_PROPERTY_H
 
 #include "style.h"
+#include "css_name_colors.h"
 
 /*
  * CSS Property Parsing Module
