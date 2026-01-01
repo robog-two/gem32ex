@@ -198,7 +198,18 @@ void Navigate(HWND hwnd, const char *url) {
     if (hUrlEdit) SetWindowText(hUrlEdit, url);
 
     HWND hLoading = GetDlgItem(hwnd, ID_LOADING_PANEL);
-    if (hLoading) ShowWindow(hLoading, SW_SHOW);
+    if (hLoading) {
+        ShowWindow(hLoading, SW_SHOW);
+        UpdateWindow(hLoading);
+        UpdateWindow(hwnd);
+        
+        // Pump any pending messages to start animation
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
 
     network_response_t *res = network_fetch(url);
     if (res && res->data) {
