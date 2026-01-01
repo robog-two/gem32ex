@@ -311,7 +311,7 @@ void style_compute(node_t *node) {
     attr_t *attr = node->attributes;
     while (attr) {
         if (strcasecmp(attr->name, "style") == 0 && attr->value) {
-            parse_inline_style(style, attr->value);
+            css_properties_parse_block(style, attr->value);
         } else if (strcasecmp(attr->name, "align") == 0 && attr->value) {
             if (strcasecmp(attr->value, "center") == 0) style->text_align = TEXT_ALIGN_CENTER;
             else if (strcasecmp(attr->value, "right") == 0) style->text_align = TEXT_ALIGN_RIGHT;
@@ -335,9 +335,9 @@ void style_compute(node_t *node) {
         } else if (strcasecmp(attr->name, "border") == 0 && attr->value) {
             style->border_width = atoi(attr->value);
         } else if (strcasecmp(attr->name, "color") == 0 && attr->value) {
-            style->color = parse_color(attr->value);
+            style->color = css_parse_color(attr->value);
         } else if (strcasecmp(attr->name, "bgcolor") == 0 && attr->value) {
-            style->bg_color = parse_color(attr->value);
+            style->bg_color = css_parse_color(attr->value);
         } else if (strcasecmp(attr->name, "background") == 0 && attr->value) {
             if (style->bg_image) free(style->bg_image);
             style->bg_image = strdup(attr->value);

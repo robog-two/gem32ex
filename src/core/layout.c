@@ -336,6 +336,7 @@ static void layout_inline_children(layout_box_t *box, constraint_space_t space, 
 
 
 static void layout_table(layout_box_t *box, constraint_space_t space) {
+    (void)space;
     int max_cells_in_row = 0;
     layout_box_t *row = box->first_child;
     while (row) {

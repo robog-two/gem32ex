@@ -17,6 +17,7 @@ void network_response_free(network_response_t *res) {
 
 // Mock for now, in a real implementation this would show a dialog
 static char* platform_input_prompt(const char *prompt) {
+    (void)prompt;
     // Return NULL or a mock string to test logic
     return NULL; 
 }

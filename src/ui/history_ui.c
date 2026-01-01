@@ -151,7 +151,6 @@ static int layout_node_positions(history_node_t *node, node_pos_t *positions, in
                                  int start_x, int start_y, int *pos_index) {
     if (!node || *pos_index >= node_count) return start_x;
 
-    int iconSize = 16;
     int spacing = 24;
 
     int node_idx = *pos_index;
@@ -177,7 +176,6 @@ static int layout_node_positions(history_node_t *node, node_pos_t *positions, in
 
         // Layout each child
         for (int i = 0; i < node->children_count; i++) {
-            int child_width = calculate_node_width(node->children[i]);
             current_x = layout_node_positions(node->children[i], positions, node_count,
                                              child_start_x, start_y - spacing, pos_index);
             child_start_x = current_x + spacing;
@@ -191,27 +189,7 @@ static int layout_node_positions(history_node_t *node, node_pos_t *positions, in
     return current_x;
 }
 
-// Get position index of a node
-static int find_node_position(history_node_t *root, history_node_t *target, int *index) {
-    if (!root) return -1;
 
-    static int current_index = 0;
-    if (root == target) {
-        int result = current_index;
-        current_index = 0;
-        return result;
-    }
-
-    current_index++;
-
-    for (int i = 0; i < root->children_count; i++) {
-        int result = find_node_position(root->children[i], target, index);
-        if (result >= 0) return result;
-    }
-
-    current_index--;
-    return -1;
-}
 
 // Count total nodes in tree
 static int count_tree_nodes(history_node_t *node) {
@@ -230,13 +208,6 @@ static void draw_connections(HDC hdc, history_node_t *node, node_pos_t *position
 
     int iconSize = 16;
     int spacing = 24;
-
-    // Find this node's position
-    int my_idx = -1;
-    for (int i = 0; i < node_count; i++) {
-        // We'll use a simpler approach - just iterate through tree to find node
-        // For now, we'll draw connections as we go
-    }
 
     if (node->children_count > 0) {
         HPEN hPen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
@@ -281,7 +252,6 @@ static void draw_nodes_at_positions(HDC hdc, history_node_t *node, node_pos_t *p
 static void draw_history_tree_grid(HDC hdc, history_tree_t *tree) {
     if (!tree || !tree->root) return;
 
-    int iconSize = 16;
     int base_x = 10;
 
     // Count nodes
@@ -376,51 +346,7 @@ static history_node_t* hit_test_grid(history_node_t *node, node_pos_t *positions
     return NULL;
 }
 
-// Draw the history tree (horizontal layout, left-to-right)
-static void draw_history_tree_horizontal(HDC hdc, history_node_t *node, int *x, int y) {
-    if (!node) return;
 
-    int iconSize = 16;
-    int spacing = 24;
-    int curX = *x;
-
-    if (node->favicon_data) {
-        render_image_data(hdc, node->favicon_data, node->favicon_size, curX, y, iconSize, iconSize);
-    } else {
-        // Draw a globe-ish circle for Gemini or missing icons
-        HBRUSH hBrush = CreateSolidBrush(RGB(100, 150, 255));
-        HBRUSH oldBrush = SelectObject(hdc, hBrush);
-        Ellipse(hdc, curX, y, curX + iconSize, y + iconSize);
-        SelectObject(hdc, oldBrush);
-        DeleteObject(hBrush);
-    }
-
-    *x += spacing;
-
-    for (int i = 0; i < node->children_count; i++) {
-        draw_history_tree_horizontal(hdc, node->children[i], x, y);
-    }
-}
-
-// Hit test for history tree (horizontal layout)
-static history_node_t* hit_test_horizontal(history_node_t *node, int *x, int y, int hitX, int hitY) {
-    if (!node) return NULL;
-    int iconSize = 16;
-    int spacing = 24;
-    int curX = *x;
-
-    if (hitX >= curX && hitX <= curX + iconSize && hitY >= y && hitY <= y + iconSize) {
-        return node;
-    }
-
-    *x += spacing;
-
-    for (int i = 0; i < node->children_count; i++) {
-        history_node_t *res = hit_test_horizontal(node->children[i], x, y, hitX, hitY);
-        if (res) return res;
-    }
-    return NULL;
-}
 
 // Public interface: Draw history tree using grid layout
 void history_ui_draw(HDC hdc, history_tree_t *tree) {
