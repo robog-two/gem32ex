@@ -38,9 +38,11 @@ static HINSTANCE g_hInst;
 static int g_manual_navigation = 0;
 static int g_skip_history = 0;
 static HMODULE g_hShell32 = NULL;
+static HWND g_hLoading = NULL;
 
 // Forward declarations
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+static LRESULT CALLBACK LoadingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
@@ -80,9 +82,29 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     wcHistory.lpszClassName = "Gem32HistoryClass";
     if (!RegisterClassEx(&wcHistory)) return FALSE;
 
+    // Register Loading Window Class
+    WNDCLASSEX wcLoading = {0};
+    wcLoading.cbSize = sizeof(WNDCLASSEX);
+    wcLoading.lpfnWndProc = LoadingWndProc;
+    wcLoading.hInstance = hInstance;
+    wcLoading.hCursor = LoadCursor(NULL, IDC_WAIT);
+    wcLoading.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcLoading.lpszClassName = "Gem32LoadingClass";
+    if (!RegisterClassEx(&wcLoading)) return FALSE;
+
     // Create Main Window
     HWND hwnd = CreateWindow("Gem32WindowClass", "Gem32 Browser", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, hInstance, NULL);
     if (!hwnd) return FALSE;
+
+    // Create Loading Popup (Hidden initially)
+    g_hLoading = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "Gem32LoadingClass", "", WS_POPUP | WS_BORDER, 0, 0, 300, 150, hwnd, NULL, hInstance, NULL);
+    
+    // Animation Control
+    CreateWindow(ANIMATE_CLASS, NULL, WS_CHILD | WS_VISIBLE | ACS_CENTER | ACS_TRANSPARENT, 10, 10, 280, 80, g_hLoading, (HMENU)ID_ANIM_CTRL, hInstance, NULL);
+    // Status Text
+    CreateWindow("STATIC", "Downloading resources...", WS_CHILD | WS_VISIBLE | SS_CENTER, 10, 95, 280, 20, g_hLoading, (HMENU)ID_STATUS_TEXT, hInstance, NULL);
+    // Progress Bar
+    CreateWindow(PROGRESS_CLASS, NULL, WS_CHILD | WS_VISIBLE | PBS_SMOOTH, 10, 120, 280, 20, g_hLoading, (HMENU)ID_PROG_CTRL, hInstance, NULL);
 
     g_hShell32 = LoadLibrary("shell32.dll");
 
@@ -202,11 +224,20 @@ void Navigate(HWND hwnd, const char *url) {
     HWND hUrlEdit = GetDlgItem(hwnd, ID_EDIT_URL);
     if (hUrlEdit) SetWindowText(hUrlEdit, url);
 
-    HWND hLoading = GetDlgItem(hwnd, ID_LOADING_PANEL);
-    HWND hAnim = GetDlgItem(hLoading, ID_ANIM_CTRL);
-    
-    if (hLoading) {
-        ShowWindow(hLoading, SW_SHOW);
+    // Center and show loading popup
+    if (g_hLoading) {
+        RECT rcMain;
+        GetWindowRect(hwnd, &rcMain);
+        int mainW = rcMain.right - rcMain.left;
+        int mainH = rcMain.bottom - rcMain.top;
+        int panelW = 300;
+        int panelH = 150;
+        int x = rcMain.left + (mainW - panelW) / 2;
+        int y = rcMain.top + (mainH - panelH) / 2;
+        
+        SetWindowPos(g_hLoading, HWND_TOP, x, y, panelW, panelH, SWP_SHOWWINDOW);
+        
+        HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
         
         // Start Animation
         if (g_hShell32 && hAnim) {
@@ -215,7 +246,7 @@ void Navigate(HWND hwnd, const char *url) {
             }
         }
         
-        UpdateWindow(hLoading);
+        UpdateWindow(g_hLoading);
         UpdateWindow(hwnd);
         
         // Pump any pending messages to start animation
@@ -245,7 +276,7 @@ void Navigate(HWND hwnd, const char *url) {
             int resource_count = loader_count_resources(new_dom);
             
             // Initialize progress bar
-            HWND hProg = GetDlgItem(hLoading, ID_PROG_CTRL);
+            HWND hProg = GetDlgItem(g_hLoading, ID_PROG_CTRL);
             if (hProg) {
                 SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, resource_count > 0 ? resource_count : 1));
                 SendMessage(hProg, PBM_SETPOS, 0, 0);
@@ -253,7 +284,7 @@ void Navigate(HWND hwnd, const char *url) {
 
             if (resource_count > 0) {
                  int current = 0;
-                 loader_fetch_resources(new_dom, res->final_url ? res->final_url : url, LoaderProgressCallback, hLoading, &current, resource_count);
+                 loader_fetch_resources(new_dom, res->final_url ? res->final_url : url, LoaderProgressCallback, g_hLoading, &current, resource_count);
             }
 
             RECT rc;
@@ -287,9 +318,10 @@ void Navigate(HWND hwnd, const char *url) {
         LOG_ERROR("Failed to fetch: %s", url);
     }
 
-    if (hLoading) {
+    if (g_hLoading) {
+        HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
         if (hAnim) SendMessage(hAnim, ACM_STOP, 0, 0);
-        ShowWindow(hLoading, SW_HIDE);
+        ShowWindow(g_hLoading, SW_HIDE);
     }
 }
 
@@ -401,21 +433,29 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     return 0;
 }
 
+static LRESULT CALLBACK LoadingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            // Draw a nice border
+            FrameRect(hdc, &rc, GetSysColorBrush(COLOR_ACTIVECAPTION));
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        default:
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
             CreateWindow("BUTTON", "*", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)ID_BTN_STAR, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
             CreateWindow("EDIT", "http://frogfind.com", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)ID_EDIT_URL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
             CreateWindow("BUTTON", "Go", WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)ID_BTN_GO, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-
-            // Loading Panel (Container)
-            HWND hLoading = CreateWindow("STATIC", "", WS_CHILD | WS_BORDER | SS_NOTIFY, 0, 0, 300, 150, hwnd, (HMENU)ID_LOADING_PANEL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-            // Animation Control
-            CreateWindow(ANIMATE_CLASS, NULL, WS_CHILD | WS_VISIBLE | ACS_CENTER | ACS_TRANSPARENT, 10, 10, 280, 80, hLoading, (HMENU)ID_ANIM_CTRL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-            // Status Text
-            CreateWindow("STATIC", "Downloading resources...", WS_CHILD | WS_VISIBLE | SS_CENTER, 10, 95, 280, 20, hLoading, (HMENU)ID_STATUS_TEXT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-            // Progress Bar
-            CreateWindow(PROGRESS_CLASS, NULL, WS_CHILD | WS_VISIBLE | PBS_SMOOTH, 10, 120, 280, 20, hLoading, (HMENU)ID_PROG_CTRL, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 
             CreateWindow("Gem32ContentClass", NULL, WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL, 0, 0, 0, 0, hwnd, (HMENU)ID_CONTENT, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
                         CreateWindow(
@@ -468,7 +508,6 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
     HWND hGo = GetDlgItem(hwnd, ID_BTN_GO);
     HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
     HWND hHistory = GetDlgItem(hwnd, ID_HISTORY);
-    HWND hLoading = GetDlgItem(hwnd, ID_LOADING_PANEL);
 
     if (hStar) MoveWindow(hStar, 0, topBarY, btnSize, btnSize, TRUE);
     if (hUrl) MoveWindow(hUrl, urlX, topBarY, urlWidth, btnSize, TRUE);
@@ -489,13 +528,4 @@ static void ResizeChildWindows(HWND hwnd, int width, int height) {
 
     // Update history_ui panel height
     history_ui_set_panel_height(contentHeight);
-
-    // Center Loading Panel
-    if (hLoading) {
-        int panelW = 300;
-        int panelH = 150;
-        int panelX = (width - panelW) / 2;
-        int panelY = (height - panelH) / 2;
-        MoveWindow(hLoading, panelX, panelY, panelW, panelH, TRUE);
-    }
 }
