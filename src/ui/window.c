@@ -46,7 +46,7 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 static void ResizeChildWindows(HWND hwnd, int width, int height);
 void Navigate(HWND hwnd, const char *url); // Forward declaration
 
-BOOL window_init(HINSTANCE hInstance) {
+BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_hInst = hInstance;
     g_history = history_create(); // Fixed: history_create, not history_tree_create
     
@@ -84,18 +84,10 @@ BOOL window_init(HINSTANCE hInstance) {
     HWND hwnd = CreateWindow("Gem32WindowClass", "Gem32 Browser", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, hInstance, NULL);
     if (!hwnd) return FALSE;
 
-    ShowWindow(hwnd, SW_SHOW);
+    ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
     return TRUE;
-}
-
-void window_loop(void) {
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
 }
 
 static void UpdateScrollBars(HWND hwnd) {
