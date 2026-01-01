@@ -145,8 +145,6 @@ static void HandleClick(HWND hwnd, int x, int y) {
 
 #include "network/loader.h"
 
-// Unused callback removed/commented out to avoid warning
-/*
 static void LoaderProgressCallback(int current, int total, void *ctx) {
     HWND hLoadingPanel = (HWND)ctx;
     HWND hProgress = GetDlgItem(hLoadingPanel, ID_PROG_CTRL);
@@ -163,7 +161,6 @@ static void LoaderProgressCallback(int current, int total, void *ctx) {
         DispatchMessage(&msg);
     }
 }
-*/
 
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -217,6 +214,13 @@ void Navigate(HWND hwnd, const char *url) {
             if (g_current_layout) layout_free(g_current_layout);
             
             style_compute(new_dom);
+
+            // Fetch resources (Images, etc.)
+            int resource_count = loader_count_resources(new_dom);
+            if (resource_count > 0) {
+                 int current = 0;
+                 loader_fetch_resources(new_dom, res->final_url ? res->final_url : url, LoaderProgressCallback, hLoading, &current, resource_count);
+            }
 
             RECT rc;
             GetClientRect(GetDlgItem(hwnd, ID_CONTENT), &rc);
