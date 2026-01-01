@@ -52,6 +52,12 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     g_hInst = hInstance;
     g_history = history_create(); // Fixed: history_create, not history_tree_create
     
+    // Initialize Common Controls
+    INITCOMMONCONTROLSEX icex;
+    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    icex.dwICC = ICC_ANIMATE_CLASS | ICC_BAR_CLASSES;
+    InitCommonControlsEx(&icex);
+    
     // Register Main Window Class
     WNDCLASSEX wc = {0};
     wc.cbSize = sizeof(WNDCLASSEX);
