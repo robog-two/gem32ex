@@ -94,7 +94,7 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     wcLoading.lpfnWndProc = LoadingWndProc;
     wcLoading.hInstance = hInstance;
     wcLoading.hCursor = LoadCursor(NULL, IDC_WAIT);
-    wcLoading.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcLoading.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
     wcLoading.lpszClassName = "Gem32LoadingClass";
     if (!RegisterClassEx(&wcLoading)) return FALSE;
 
