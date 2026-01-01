@@ -23,40 +23,6 @@ char* css_parse_url(const char *val) {
     return strdup(val);
 }
 
-// Parse color value
-uint32_t css_parse_color(const char *value) {
-    if (!value) return 0xFFFFFF;
-
-    // Named colors (uses css_name_colors.h)
-    uint32_t color;
-    if (css_parse_named_color(value, &color)) {
-        return color;
-    }
-
-    // Hex colors
-    if (value[0] == '#') {
-        const char *hex = value + 1;
-        int len = strlen(hex);
-
-        if (len == 6) {
-            // #RRGGBB
-            return (uint32_t)strtol(hex, NULL, 16);
-        } else if (len == 3) {
-            // #RGB -> #RRGGBB
-            char expanded[7];
-            expanded[0] = hex[0]; expanded[1] = hex[0];
-            expanded[2] = hex[1]; expanded[3] = hex[1];
-            expanded[4] = hex[2]; expanded[5] = hex[2];
-            expanded[6] = '\0';
-            return (uint32_t)strtol(expanded, NULL, 16);
-        }
-    }
-
-    // TODO: rgb() and rgba() parsing
-    // For now, return default
-    return 0xFFFFFF;
-}
-
 // Parse dimension (handles px, em, %, etc.)
 int css_parse_dimension(const char *value) {
     if (!value) return 0;
@@ -224,11 +190,11 @@ int css_property_parse(style_t *style, const char *name, const char *value) {
 
     // Colors
     if (strcasecmp(n, "color") == 0) {
-        style->color = css_parse_color(v);
+        style->color = parse_color(v);
         return 1;
     }
     if (strcasecmp(n, "background-color") == 0) {
-        style->bg_color = css_parse_color(v);
+        style->bg_color = parse_color(v);
         return 1;
     }
 

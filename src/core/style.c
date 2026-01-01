@@ -1,6 +1,7 @@
 #include "style.h"
 #include "dom.h"
 #include "log.h"
+#include "css_name_colors.h"
 #include "css_property.h"
 #include "css_stylesheet.h"
 #include <string.h>
@@ -335,9 +336,9 @@ void style_compute(node_t *node) {
         } else if (strcasecmp(attr->name, "border") == 0 && attr->value) {
             style->border_width = atoi(attr->value);
         } else if (strcasecmp(attr->name, "color") == 0 && attr->value) {
-            style->color = css_parse_color(attr->value);
+            style->color = parse_color(attr->value);
         } else if (strcasecmp(attr->name, "bgcolor") == 0 && attr->value) {
-            style->bg_color = css_parse_color(attr->value);
+            style->bg_color = parse_color(attr->value);
         } else if (strcasecmp(attr->name, "background") == 0 && attr->value) {
             if (style->bg_image) free(style->bg_image);
             style->bg_image = strdup(attr->value);

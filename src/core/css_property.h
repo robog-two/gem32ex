@@ -50,7 +50,7 @@ void css_properties_parse_block(style_t *style, const char *css_block);
  *
  * Returns color as 0xRRGGBB, or 0xFFFFFFFF for invalid/transparent
  */
-uint32_t css_parse_color(const char *value);
+uint32_t parse_color(const char *value);
 
 /*
  * Parse a dimension value (number with optional unit)
