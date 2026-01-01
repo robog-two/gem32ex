@@ -84,6 +84,8 @@ BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     HWND hwnd = CreateWindow("Gem32WindowClass", "Gem32 Browser", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, hInstance, NULL);
     if (!hwnd) return FALSE;
 
+    g_hShell32 = LoadLibrary("shell32.dll");
+
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
@@ -191,6 +193,9 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     }
 }
 
+// Standard Shell32 Animation IDs
+#define IDR_AVI_FILECOPY 160
+
 void Navigate(HWND hwnd, const char *url) {
     LOG_INFO("Navigating to: %s", url);
 
@@ -198,8 +203,18 @@ void Navigate(HWND hwnd, const char *url) {
     if (hUrlEdit) SetWindowText(hUrlEdit, url);
 
     HWND hLoading = GetDlgItem(hwnd, ID_LOADING_PANEL);
+    HWND hAnim = GetDlgItem(hLoading, ID_ANIM_CTRL);
+    
     if (hLoading) {
         ShowWindow(hLoading, SW_SHOW);
+        
+        // Start Animation
+        if (g_hShell32 && hAnim) {
+            if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
+                SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1)); // Loop forever
+            }
+        }
+        
         UpdateWindow(hLoading);
         UpdateWindow(hwnd);
         
@@ -264,7 +279,10 @@ void Navigate(HWND hwnd, const char *url) {
         LOG_ERROR("Failed to fetch: %s", url);
     }
 
-    if (hLoading) ShowWindow(hLoading, SW_HIDE);
+    if (hLoading) {
+        if (hAnim) SendMessage(hAnim, ACM_STOP, 0, 0);
+        ShowWindow(hLoading, SW_HIDE);
+    }
 }
 
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
