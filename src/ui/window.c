@@ -466,6 +466,7 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
+            // Render content
             if (g_current_layout) {
                 render_tree(hdc, g_current_layout, -g_scroll_x, -g_scroll_y);
             } else {
