@@ -8,6 +8,8 @@
 #include "bookmarks.h"
 #include "core/log.h"
 #include "network/protocol.h"
+#include "core/html.h"
+#include "core/layout.h"
 
 // Constants
 #define TOP_BAR_HEIGHT 30
@@ -31,7 +33,7 @@ static int g_scroll_y = 0;
 static int g_scroll_x = 0;
 static int g_content_height = 0;
 static int g_content_width = 0;
-static node_t *g_focused_node = NULL;
+node_t *g_focused_node = NULL; // Removed static, matches render.h
 static HINSTANCE g_hInst;
 static int g_manual_navigation = 0;
 static int g_skip_history = 0;
@@ -42,10 +44,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
+void Navigate(HWND hwnd, const char *url); // Forward declaration
 
 BOOL window_init(HINSTANCE hInstance) {
     g_hInst = hInstance;
-    g_history = history_tree_create();
+    g_history = history_create(); // Fixed: history_create, not history_tree_create
     
     // Register Main Window Class
     WNDCLASSEX wc = {0};
@@ -125,7 +128,8 @@ static void HandleClick(HWND hwnd, int x, int y) {
 
     if (!g_current_layout) return;
 
-    layout_box_t *clicked = layout_find_at(g_current_layout, absoluteX, absoluteY);
+    // Fixed: layout_hit_test, not layout_find_at
+    layout_box_t *clicked = layout_hit_test(g_current_layout, absoluteX, absoluteY);
     if (clicked && clicked->node) {
         node_t *node = clicked->node;
 
@@ -149,6 +153,8 @@ static void HandleClick(HWND hwnd, int x, int y) {
 
 #include "network/loader.h"
 
+// Unused callback removed/commented out to avoid warning
+/*
 static void LoaderProgressCallback(int current, int total, void *ctx) {
     HWND hLoadingPanel = (HWND)ctx;
     HWND hProgress = GetDlgItem(hLoadingPanel, ID_PROG_CTRL);
@@ -165,7 +171,7 @@ static void LoaderProgressCallback(int current, int total, void *ctx) {
         DispatchMessage(&msg);
     }
 }
-
+*/
 
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -208,7 +214,8 @@ void Navigate(HWND hwnd, const char *url) {
     network_response_t *res = network_fetch(url);
     if (res && res->data) {
         if (!g_skip_history) {
-            history_tree_add(g_history, res->final_url ? res->final_url : url);
+            // Fixed: history_add, not history_tree_add
+            history_add(g_history, res->final_url ? res->final_url : url, "Title"); 
             history_ui_fetch_favicon(g_history->current);
         }
 
@@ -221,11 +228,20 @@ void Navigate(HWND hwnd, const char *url) {
 
             RECT rc;
             GetClientRect(GetDlgItem(hwnd, ID_CONTENT), &rc);
-            constraint_space_t space = { rc.right - rc.left, 0 };
-            g_current_layout = layout_create(new_dom, space);
+            // Initialize constraint space properly
+            constraint_space_t space = {0};
+            space.available_width = rc.right - rc.left;
+            space.is_fixed_width = 1;
+            
+            g_current_layout = layout_create_tree(new_dom, space.available_width);
 
-            g_content_height = g_current_layout->height;
-            g_content_width = g_current_layout->width;
+            if (g_current_layout) {
+                g_content_height = g_current_layout->fragment.border_box.height;
+                g_content_width = g_current_layout->fragment.border_box.width;
+            } else {
+                g_content_height = 0;
+                g_content_width = 0;
+            }
             g_scroll_y = 0;
             g_scroll_x = 0;
 
@@ -337,6 +353,7 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
+            // Render content
             if (g_current_layout) {
                 render_tree(hdc, g_current_layout, -g_scroll_x, -g_scroll_y);
             } else {
