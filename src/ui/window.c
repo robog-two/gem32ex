@@ -1,154 +1,150 @@
 #include "window.h"
+#include <windows.h>
 #include <commctrl.h>
-#include <wininet.h>
 #include <stdio.h>
-#include "network/http.h"
-#include "core/html.h"
-#include "core/style.h"
-#include "core/layout.h"
+#include "render.h"
+#include "history.h"
+#include "history_ui.h"
+#include "bookmarks.h"
 #include "core/log.h"
-#include "ui/history.h"
-#include "ui/history_ui.h"
-#include "ui/bookmarks.h"
-#include "ui/render.h"
-#include "ui/form.h"
+#include "network/protocol.h"
 
-#define ID_BTN_STAR 101
-#define ID_EDIT_URL 102
-#define ID_BTN_GO   103
-#define ID_CONTENT  104
-#define ID_HISTORY  105
-#define ID_LOADING_PANEL 106
-#define ID_ANIM_CTRL     107
-#define ID_PROG_CTRL     108
-#define ID_STATUS_TEXT   109
-
+// Constants
 #define TOP_BAR_HEIGHT 30
-#define HISTORY_WIDTH 150  // Width of history pane on left
+#define HISTORY_WIDTH 200
 
-// Standard Shell32 Animation IDs
-#define IDR_AVI_FILECOPY 160
+// Control IDs
+#define ID_EDIT_URL 1001
+#define ID_BTN_GO 1002
+#define ID_CONTENT 1003
+#define ID_HISTORY 1004
+#define ID_BTN_STAR 1005
+#define ID_LOADING_PANEL 1006
+#define ID_ANIM_CTRL 1007
+#define ID_STATUS_TEXT 1008
+#define ID_PROG_CTRL 1009
 
+// Global state
+static layout_box_t *g_current_layout = NULL;
+static history_tree_t *g_history = NULL;
+static int g_scroll_y = 0;
+static int g_scroll_x = 0;
+static int g_content_height = 0;
+static int g_content_width = 0;
+static node_t *g_focused_node = NULL;
+static HINSTANCE g_hInst;
+static int g_manual_navigation = 0;
+static int g_skip_history = 0;
+static HMODULE g_hShell32 = NULL;
+
+// Forward declarations
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void ResizeChildWindows(HWND hwnd, int width, int height);
-static void Navigate(HWND hwnd, const char *url);
-static void HandleClick(HWND hwnd, int x, int y);
 
-static history_tree_t *g_history = NULL;
-static layout_box_t *g_current_layout = NULL;
-static node_t *g_current_dom = NULL;
-node_t *g_focused_node = NULL;
-static char g_current_url[2048] = {0};
-static HMODULE g_hShell32 = NULL;
-static int g_skip_history = 0;
-static int g_manual_navigation = 0;  // Set to 1 when user manually navigates (address bar)
+BOOL window_init(HINSTANCE hInstance) {
+    g_hInst = hInstance;
+    g_history = history_tree_create();
+    
+    // Register Main Window Class
+    WNDCLASSEX wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInstance;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = "Gem32WindowClass";
+    if (!RegisterClassEx(&wc)) return FALSE;
 
-// Scrollbar State
-static int g_scroll_x = 0;
-static int g_scroll_y = 0;
-static int g_content_width = 0;
-static int g_content_height = 0;
+    // Register Content Window Class
+    WNDCLASSEX wcContent = {0};
+    wcContent.cbSize = sizeof(WNDCLASSEX);
+    wcContent.lpfnWndProc = ContentWndProc;
+    wcContent.hInstance = hInstance;
+    wcContent.hCursor = LoadCursor(NULL, IDC_IBEAM);
+    wcContent.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcContent.lpszClassName = "Gem32ContentClass";
+    if (!RegisterClassEx(&wcContent)) return FALSE;
+
+    // Register History Window Class
+    WNDCLASSEX wcHistory = {0};
+    wcHistory.cbSize = sizeof(WNDCLASSEX);
+    wcHistory.lpfnWndProc = HistoryWndProc;
+    wcHistory.hInstance = hInstance;
+    wcHistory.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wcHistory.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcHistory.lpszClassName = "Gem32HistoryClass";
+    if (!RegisterClassEx(&wcHistory)) return FALSE;
+
+    // Create Main Window
+    HWND hwnd = CreateWindow("Gem32WindowClass", "Gem32 Browser", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, hInstance, NULL);
+    if (!hwnd) return FALSE;
+
+    ShowWindow(hwnd, SW_SHOW);
+    UpdateWindow(hwnd);
+
+    return TRUE;
+}
+
+void window_loop(void) {
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
 
 static void UpdateScrollBars(HWND hwnd) {
     RECT rc;
     GetClientRect(hwnd, &rc);
-    int client_w = rc.right - rc.left;
-    int client_h = rc.bottom - rc.top;
+    int viewWidth = rc.right - rc.left;
+    int viewHeight = rc.bottom - rc.top;
 
-    SCROLLINFO si;
+    SCROLLINFO si = {0};
     si.cbSize = sizeof(SCROLLINFO);
-    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.fMask = SIF_PAGE | SIF_RANGE | SIF_POS;
+    si.nMin = 0;
 
     // Vertical
-    si.nMin = 0;
     si.nMax = g_content_height;
-    si.nPage = client_h;
+    si.nPage = viewHeight;
     si.nPos = g_scroll_y;
     SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
 
     // Horizontal
-    si.nMin = 0;
     si.nMax = g_content_width;
-    si.nPage = client_w;
+    si.nPage = viewWidth;
     si.nPos = g_scroll_x;
     SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
 }
 
-BOOL CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
-    g_history = history_create();
+static void HandleClick(HWND hwnd, int x, int y) {
+    int absoluteX = x + g_scroll_x;
+    int absoluteY = y + g_scroll_y;
 
-    // Initialize Common Controls for Animation and Progress Bar
-    INITCOMMONCONTROLSEX icex;
-    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icex.dwICC = ICC_ANIMATE_CLASS | ICC_BAR_CLASSES | ICC_STANDARD_CLASSES;
-    InitCommonControlsEx(&icex);
+    if (!g_current_layout) return;
 
-    g_hShell32 = LoadLibrary("shell32.dll");
+    layout_box_t *clicked = layout_find_at(g_current_layout, absoluteX, absoluteY);
+    if (clicked && clicked->node) {
+        node_t *node = clicked->node;
 
-    // Register Main Window Class
-    const char className[] = "Gem32BrowserClass";
-    WNDCLASS wc = {0};
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = className;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        // Focus management
+        if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "textarea") == 0) {
+            g_focused_node = node;
+            InvalidateRect(hwnd, NULL, TRUE);
+        } else {
+            g_focused_node = NULL;
+        }
 
-    if (!RegisterClass(&wc)) {
-        LOG_ERROR("Failed to register main window class");
-        return FALSE;
+        // Link handling
+        if (strcasecmp(node->tag_name, "a") == 0) {
+            const char *href = node_get_attr(node, "href");
+            if (href) {
+                Navigate(GetParent(hwnd), href);
+            }
+        }
     }
-
-    // Register Content Window Class
-    const char contentClassName[] = "Gem32ContentClass";
-    WNDCLASS wcc = {0};
-    wcc.lpfnWndProc = ContentWndProc;
-    wcc.hInstance = hInstance;
-    wcc.lpszClassName = contentClassName;
-    wcc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wcc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // White background
-
-    if (!RegisterClass(&wcc)) {
-        LOG_ERROR("Failed to register content window class");
-        return FALSE;
-    }
-
-    // Register History Window Class
-    const char historyClassName[] = "Gem32HistoryClass";
-    WNDCLASS whc = {0};
-    whc.lpfnWndProc = HistoryWndProc;
-    whc.hInstance = hInstance;
-    whc.lpszClassName = historyClassName;
-    whc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    whc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
-
-    if (!RegisterClass(&whc)) {
-        LOG_ERROR("Failed to register history window class");
-        return FALSE;
-    }
-
-    HWND hwnd = CreateWindowEx(
-        0,
-        className,
-        "Gem32 Browser",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 600, 400,
-        NULL, NULL, hInstance, NULL
-    );
-
-    if (hwnd == NULL) {
-        LOG_ERROR("Failed to create main window");
-        return FALSE;
-    }
-
-    LOG_INFO("Main window created successfully");
-
-    ShowWindow(hwnd, nCmdShow);
-    UpdateWindow(hwnd);
-
-    return TRUE;
 }
 
 #include "network/loader.h"
@@ -200,177 +196,52 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     }
 }
 
-static void ProcessNewContent(HWND hContent, network_response_t *res, const char *url) {
-    if (!res || !res->data) {
-        LOG_WARN("ProcessNewContent called with null resource or data");
-        return;
-    }
-
-    LOG_INFO("Processing new content for URL: %s (%lu bytes)", url, (unsigned long)res->size);
-
-    HWND hMain = GetParent(hContent);
-    HWND hLoadingPanel = GetDlgItem(hMain, ID_LOADING_PANEL);
-    HWND hAnim = GetDlgItem(hLoadingPanel, ID_ANIM_CTRL);
-    HWND hProg = GetDlgItem(hLoadingPanel, ID_PROG_CTRL);
-
-    // Show Loading Panel, Hide Content
-    ShowWindow(hContent, SW_HIDE);
-    ShowWindow(hLoadingPanel, SW_SHOW);
-
-    // Start Animation
-    if (g_hShell32) {
-        if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
-            SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1)); // Loop forever
-        }
-    }
-    SendMessage(hProg, PBM_SETPOS, 0, 0);
-
-    // Free previous DOM and Layout
-    if (g_current_layout) {
-        layout_free(g_current_layout);
-        g_current_layout = NULL;
-    }
-    if (g_current_dom) {
-        node_free(g_current_dom);
-        g_current_dom = NULL;
-    }
-
-    strncpy(g_current_url, url, sizeof(g_current_url)-1);
-    SetWindowText(GetDlgItem(hMain, ID_EDIT_URL), g_current_url);
-
-    g_current_dom = html_parse(res->data);
-    if (g_current_dom) {
-        style_compute(g_current_dom);
-
-        int total = loader_count_resources(g_current_dom);
-        int current = 0;
-
-        // Init bar
-        SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, total > 0 ? total : 1));
-        SendMessage(hProg, PBM_SETPOS, 0, 0);
-
-        // Fetch resources (blocking with message pump)
-        loader_fetch_resources(g_current_dom, url, LoaderProgressCallback, hLoadingPanel, &current, total);
-
-        RECT rect;
-        GetClientRect(hContent, &rect);
-        g_current_layout = layout_create_tree(g_current_dom, rect.right - rect.left);
-
-        // Update content size and scrollbars
-        g_content_width = g_current_layout->fragment.border_box.width;
-        g_content_height = g_current_layout->fragment.border_box.height;
-        g_scroll_x = 0;
-        g_scroll_y = 0;
-        UpdateScrollBars(hContent);
-
-        if (!g_skip_history) {
-            if (g_manual_navigation) {
-                // User used Go button - create new root above current tree
-                history_reset(g_history, url, "Title Placeholder");
-            } else {
-                // User clicked a link or form - add as child of current
-                history_add(g_history, url, "Title Placeholder");
-            }
-            history_ui_fetch_favicon(g_history->current);
-        }
-        InvalidateRect(GetDlgItem(hMain, ID_HISTORY), NULL, TRUE);
-    }
-
-    // Stop Animation, Hide Loading, Show Content
-    SendMessage(hAnim, ACM_STOP, 0, 0);
-    ShowWindow(hLoadingPanel, SW_HIDE);
-    ShowWindow(hContent, SW_SHOW);
-
-    // Trigger repaint
-    InvalidateRect(hContent, NULL, TRUE);
-    UpdateWindow(hContent);
-}
-
-static void Navigate(HWND hwnd, const char *url) {
+void Navigate(HWND hwnd, const char *url) {
     LOG_INFO("Navigating to: %s", url);
 
-    // Could show a "Connecting..." status here if needed, but network_fetch is blocking
-    // and usually faster than resource loading.
+    HWND hUrlEdit = GetDlgItem(hwnd, ID_EDIT_URL);
+    if (hUrlEdit) SetWindowText(hUrlEdit, url);
+
+    HWND hLoading = GetDlgItem(hwnd, ID_LOADING_PANEL);
+    if (hLoading) ShowWindow(hLoading, SW_SHOW);
 
     network_response_t *res = network_fetch(url);
-    if (res) {
-        ProcessNewContent(GetDlgItem(hwnd, ID_CONTENT), res, res->final_url ? res->final_url : url);
+    if (res && res->data) {
+        if (!g_skip_history) {
+            history_tree_add(g_history, res->final_url ? res->final_url : url);
+            history_ui_fetch_favicon(g_history->current);
+        }
+
+        node_t *new_dom = html_parse((char*)res->data);
+        if (new_dom) {
+            // Free old layout and DOM
+            if (g_current_layout) layout_free(g_current_layout);
+            
+            style_compute(new_dom);
+
+            RECT rc;
+            GetClientRect(GetDlgItem(hwnd, ID_CONTENT), &rc);
+            constraint_space_t space = { rc.right - rc.left, 0 };
+            g_current_layout = layout_create(new_dom, space);
+
+            g_content_height = g_current_layout->height;
+            g_content_width = g_current_layout->width;
+            g_scroll_y = 0;
+            g_scroll_x = 0;
+
+            HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
+            UpdateScrollBars(hContent);
+            InvalidateRect(hContent, NULL, TRUE);
+
+            HWND hHistory = GetDlgItem(hwnd, ID_HISTORY);
+            if (hHistory) InvalidateRect(hHistory, NULL, TRUE);
+        }
         network_response_free(res);
     } else {
-        LOG_ERROR("Failed to fetch URL: %s", url);
-        MessageBox(hwnd, "Failed to fetch URL", "Error", MB_ICONERROR);
-    }
-}
-
-static void HandleClick(HWND hContent, int x, int y) {
-    if (!g_current_layout) return;
-
-    // Adjust for scroll
-    layout_box_t *hit = layout_hit_test(g_current_layout, x + g_scroll_x, y + g_scroll_y);
-    if (!hit || !hit->node) {
-        g_focused_node = NULL;
-        return;
+        LOG_ERROR("Failed to fetch: %s", url);
     }
 
-    node_t *node = hit->node;
-    while (node && node->type == DOM_NODE_TEXT) node = node->parent;
-
-    // Check for anchor tag
-    node_t *anchor = node;
-    while (anchor) {
-        if (anchor->type == DOM_NODE_ELEMENT && anchor->tag_name && strcasecmp(anchor->tag_name, "a") == 0) {
-            const char *href = node_get_attr(anchor, "href");
-            if (href) {
-                char full_url[2048];
-                DWORD len = sizeof(full_url);
-                if (InternetCombineUrl(g_current_url, href, full_url, &len, 0)) {
-                    Navigate(GetParent(hContent), full_url);
-                } else {
-                    Navigate(GetParent(hContent), href);
-                }
-                return;
-            }
-        }
-        anchor = anchor->parent;
-    }
-
-    if (node && node->type == DOM_NODE_ELEMENT && node->tag_name) {
-        int is_editable = 0;
-        if (strcasecmp(node->tag_name, "textarea") == 0) is_editable = 1;
-        else if (strcasecmp(node->tag_name, "input") == 0) {
-            const char *type = node_get_attr(node, "type");
-            if (!type || (strcasecmp(type, "text") == 0 || strcasecmp(type, "password") == 0 ||
-                          strcasecmp(type, "email") == 0 || strcasecmp(type, "search") == 0 ||
-                          strcasecmp(type, "tel") == 0 || strcasecmp(type, "url") == 0)) {
-                is_editable = 1;
-            }
-        }
-
-        if (is_editable) {
-            g_focused_node = node;
-            SetFocus(hContent);
-        } else {
-            g_focused_node = NULL;
-        }
-
-        int is_submit = 0;
-        if (strcasecmp(node->tag_name, "button") == 0) is_submit = 1;
-        else if (strcasecmp(node->tag_name, "input") == 0) {
-             const char *type = node_get_attr(node, "type");
-             if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) {
-                 is_submit = 1;
-             }
-        }
-
-        if (is_submit) {
-            char target_url[2048];
-            network_response_t *res = form_submit(node, g_current_url, target_url, sizeof(target_url));
-            if (res) {
-                ProcessNewContent(hContent, res, target_url);
-                network_response_free(res);
-            }
-        }
-    }
+    if (hLoading) ShowWindow(hLoading, SW_HIDE);
 }
 
 static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -466,7 +337,6 @@ static LRESULT CALLBACK ContentWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
-            // Render content
             if (g_current_layout) {
                 render_tree(hdc, g_current_layout, -g_scroll_x, -g_scroll_y);
             } else {
