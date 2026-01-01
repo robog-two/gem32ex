@@ -10,6 +10,7 @@
 #include "network/protocol.h"
 #include "core/html.h"
 #include "core/layout.h"
+#include "ui/form.h"
 
 // Constants
 #define TOP_BAR_HEIGHT 30
@@ -158,6 +159,7 @@ static void HandleClick(HWND hwnd, int x, int y) {
         // Focus management
         if (strcasecmp(node->tag_name, "input") == 0 || strcasecmp(node->tag_name, "textarea") == 0) {
             g_focused_node = node;
+            SetFocus(hwnd); // Ensure window has keyboard focus
             InvalidateRect(hwnd, NULL, TRUE);
         } else {
             g_focused_node = NULL;
@@ -168,6 +170,61 @@ static void HandleClick(HWND hwnd, int x, int y) {
             const char *href = node_get_attr(node, "href");
             if (href) {
                 Navigate(GetParent(hwnd), href);
+            }
+        }
+
+        // Submit Button Handling
+        int is_submit = 0;
+        if (strcasecmp(node->tag_name, "button") == 0) is_submit = 1;
+        else if (strcasecmp(node->tag_name, "input") == 0) {
+             const char *type = node_get_attr(node, "type");
+             if (type && (strcasecmp(type, "submit") == 0 || strcasecmp(type, "button") == 0)) {
+                 is_submit = 1;
+             }
+        }
+
+        if (is_submit) {
+            const char *base_url = (g_history && g_history->current) ? g_history->current->url : "about:blank";
+            char target_url[2048];
+            
+            // Show Loading
+            if (g_hLoading) {
+                RECT rcMain;
+                GetWindowRect(GetParent(hwnd), &rcMain);
+                int mainW = rcMain.right - rcMain.left;
+                int mainH = rcMain.bottom - rcMain.top;
+                int panelW = 300;
+                int panelH = 150;
+                int x = rcMain.left + (mainW - panelW) / 2;
+                int y = rcMain.top + (mainH - panelH) / 2;
+                SetWindowPos(g_hLoading, HWND_TOP, x, y, panelW, panelH, SWP_SHOWWINDOW);
+                
+                HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
+                if (g_hShell32 && hAnim) {
+                    if (SendMessage(hAnim, ACM_OPEN, (WPARAM)g_hShell32, (LPARAM)MAKEINTRESOURCE(IDR_AVI_FILECOPY))) {
+                        SendMessage(hAnim, ACM_PLAY, (WPARAM)-1, MAKELPARAM(0, -1));
+                    }
+                }
+                UpdateWindow(g_hLoading);
+                MSG msg;
+                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
+            }
+
+            network_response_t *res = form_submit(node, base_url, target_url, sizeof(target_url));
+            if (res) {
+                ProcessResponse(GetParent(hwnd), res, target_url);
+                network_response_free(res);
+            } else {
+                LOG_ERROR("Form submission failed");
+            }
+
+            if (g_hLoading) {
+                HWND hAnim = GetDlgItem(g_hLoading, ID_ANIM_CTRL);
+                if (hAnim) SendMessage(hAnim, ACM_STOP, 0, 0);
+                ShowWindow(g_hLoading, SW_HIDE);
             }
         }
     }
@@ -224,6 +281,67 @@ static LRESULT CALLBACK HistoryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 // Standard Shell32 Animation IDs
 #define IDR_AVI_FILECOPY 160
 
+static void ProcessResponse(HWND hwnd, network_response_t *res, const char *url) {
+    if (!res || !res->data) {
+        LOG_ERROR("ProcessResponse: No data for %s", url);
+        return;
+    }
+
+    if (!g_skip_history) {
+        history_add(g_history, res->final_url ? res->final_url : url, "Title");
+        history_ui_fetch_favicon(g_history->current);
+    }
+
+    node_t *new_dom = html_parse((char*)res->data);
+    if (new_dom) {
+        // Free old layout and DOM
+        if (g_current_layout) layout_free(g_current_layout);
+        
+        style_compute(new_dom);
+
+        // Fetch resources (Images, etc.)
+        int resource_count = loader_count_resources(new_dom);
+        
+        // Initialize progress bar
+        HWND hProg = GetDlgItem(g_hLoading, ID_PROG_CTRL);
+        if (hProg) {
+            SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, resource_count > 0 ? resource_count : 1));
+            SendMessage(hProg, PBM_SETPOS, 0, 0);
+        }
+
+        if (resource_count > 0) {
+             int current = 0;
+             loader_fetch_resources(new_dom, res->final_url ? res->final_url : url, LoaderProgressCallback, g_hLoading, &current, resource_count);
+        }
+
+        RECT rc;
+        GetClientRect(GetDlgItem(hwnd, ID_CONTENT), &rc);
+        // Initialize constraint space properly
+        constraint_space_t space = {0};
+        space.available_width = rc.right - rc.left;
+        space.is_fixed_width = 1;
+        
+        g_current_layout = layout_create_tree(new_dom, space.available_width);
+
+        if (g_current_layout) {
+            g_content_height = g_current_layout->fragment.border_box.height;
+            g_content_width = g_current_layout->fragment.border_box.width;
+        } else {
+            g_content_height = 0;
+            g_content_width = 0;
+        }
+        g_scroll_y = 0;
+        g_scroll_x = 0;
+
+        HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
+        UpdateScrollBars(hContent);
+        InvalidateRect(hContent, NULL, TRUE);
+
+        HWND hHistory = GetDlgItem(hwnd, ID_HISTORY);
+        if (hHistory) InvalidateRect(hHistory, NULL, TRUE);
+    }
+}
+
 void Navigate(HWND hwnd, const char *url) {
     LOG_INFO("Navigating to: %s", url);
 
@@ -265,60 +383,7 @@ void Navigate(HWND hwnd, const char *url) {
 
     network_response_t *res = network_fetch(url);
     if (res && res->data) {
-        if (!g_skip_history) {
-            // Fixed: history_add, not history_tree_add
-            history_add(g_history, res->final_url ? res->final_url : url, "Title"); 
-            history_ui_fetch_favicon(g_history->current);
-        }
-
-        node_t *new_dom = html_parse((char*)res->data);
-        if (new_dom) {
-            // Free old layout and DOM
-            if (g_current_layout) layout_free(g_current_layout);
-            
-            style_compute(new_dom);
-
-            // Fetch resources (Images, etc.)
-            int resource_count = loader_count_resources(new_dom);
-            
-            // Initialize progress bar
-            HWND hProg = GetDlgItem(g_hLoading, ID_PROG_CTRL);
-            if (hProg) {
-                SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, resource_count > 0 ? resource_count : 1));
-                SendMessage(hProg, PBM_SETPOS, 0, 0);
-            }
-
-            if (resource_count > 0) {
-                 int current = 0;
-                 loader_fetch_resources(new_dom, res->final_url ? res->final_url : url, LoaderProgressCallback, g_hLoading, &current, resource_count);
-            }
-
-            RECT rc;
-            GetClientRect(GetDlgItem(hwnd, ID_CONTENT), &rc);
-            // Initialize constraint space properly
-            constraint_space_t space = {0};
-            space.available_width = rc.right - rc.left;
-            space.is_fixed_width = 1;
-            
-            g_current_layout = layout_create_tree(new_dom, space.available_width);
-
-            if (g_current_layout) {
-                g_content_height = g_current_layout->fragment.border_box.height;
-                g_content_width = g_current_layout->fragment.border_box.width;
-            } else {
-                g_content_height = 0;
-                g_content_width = 0;
-            }
-            g_scroll_y = 0;
-            g_scroll_x = 0;
-
-            HWND hContent = GetDlgItem(hwnd, ID_CONTENT);
-            UpdateScrollBars(hContent);
-            InvalidateRect(hContent, NULL, TRUE);
-
-            HWND hHistory = GetDlgItem(hwnd, ID_HISTORY);
-            if (hHistory) InvalidateRect(hHistory, NULL, TRUE);
-        }
+        ProcessResponse(hwnd, res, res->final_url ? res->final_url : url);
         network_response_free(res);
     } else {
         LOG_ERROR("Failed to fetch: %s", url);
