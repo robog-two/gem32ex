@@ -243,6 +243,14 @@ void Navigate(HWND hwnd, const char *url) {
 
             // Fetch resources (Images, etc.)
             int resource_count = loader_count_resources(new_dom);
+            
+            // Initialize progress bar
+            HWND hProg = GetDlgItem(hLoading, ID_PROG_CTRL);
+            if (hProg) {
+                SendMessage(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, resource_count > 0 ? resource_count : 1));
+                SendMessage(hProg, PBM_SETPOS, 0, 0);
+            }
+
             if (resource_count > 0) {
                  int current = 0;
                  loader_fetch_resources(new_dom, res->final_url ? res->final_url : url, LoaderProgressCallback, hLoading, &current, resource_count);
