@@ -2,6 +2,8 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "render.h"
 #include "history.h"
 #include "history_ui.h"
